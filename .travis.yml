@@ -1,0 +1,7 @@
+language: go
+
+go:
+  - "1.14"
+  - master
+
+script: go test -race -cover ./... -v -timeout 10s
