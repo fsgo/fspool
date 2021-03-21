@@ -232,6 +232,10 @@ func (p *SimplePool) maybeOpenNewConnections() {
 // putConn adds a connection to the db's free SimplePool.
 // err is optionally the last error that occurred on this connection.
 func (p *SimplePool) putConn(dc Element, err error) {
+	if p.option.MaxIdle < 1 {
+		dc.RawClose()
+		return
+	}
 	p.mu.Lock()
 
 	if err != ErrBadValue && !dc.Active() {

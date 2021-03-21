@@ -33,9 +33,8 @@ func (t *testEL) Active() bool {
 func (t *testEL) Close() error {
 	if t.Active() {
 		return t.p.Put(t)
-	} else {
-		return t.RawClose()
 	}
+	return t.RawClose()
 }
 
 func (t *testEL) RawClose() error {
@@ -45,20 +44,21 @@ func (t *testEL) RawClose() error {
 var _ Element = (*testEL)(nil)
 
 func TestNewSimple(t *testing.T) {
-	t.Run("case 1-default values", func(t *testing.T) {
-		var id int32
-		resetID := func() {
-			atomic.StoreInt32(&id, 0)
-		}
-		newFunc := func(ctx context.Context, p *SimplePool) (Element, error) {
-			v := atomic.AddInt32(&id, 1)
-			return &testEL{id: v, p: p}, nil
-		}
+	var id int32
 
-		p := NewSimple(nil, newFunc)
+	resetID := func() {
+		atomic.StoreInt32(&id, 0)
+	}
+
+	newFunc := func(ctx context.Context, p *SimplePool) (Element, error) {
+		v := atomic.AddInt32(&id, 1)
+		return &testEL{id: v, p: p}, nil
+	}
+
+	testForEach := func(t *testing.T, p *SimplePool, getWant func(i int) int32) {
+		defer resetID()
 
 		t.Run("foreach", func(t *testing.T) {
-			defer resetID()
 			for i := 1; i < 100; i++ {
 				val, err := p.Get(context.Background())
 				if err != nil {
@@ -66,40 +66,74 @@ func TestNewSimple(t *testing.T) {
 				}
 				v := val.(*testEL)
 				got := v.ID()
-				want := int32(i)
+				want := getWant(i)
+				val.Close()
 				if got != want {
 					t.Fatalf("got=%v want=%v", got, want)
 				}
 			}
 		})
+	}
 
-		t.Run("foreach_conc", func(t *testing.T) {
-			defer resetID()
+	testForEachConc := func(t *testing.T, p *SimplePool, doWant func(want *int32, i int)) {
+		defer resetID()
+		var wg sync.WaitGroup
+		var got int32
+		var want int32
 
-			var wg sync.WaitGroup
-			var got int32
-			var want int32
+		for i := 1; i < 100; i++ {
+			wg.Add(1)
+			doWant(&want, i)
 
-			for i := 1; i < 100; i++ {
-				wg.Add(1)
-				atomic.AddInt32(&want, int32(i))
+			go func() {
+				defer wg.Done()
+				val, err := p.Get(context.Background())
+				if err != nil {
+					return
+				}
+				defer val.Close()
+				v := val.(*testEL)
+				atomic.AddInt32(&got, v.ID())
+			}()
+		}
+		wg.Wait()
+		if got != want {
+			t.Fatalf("got=%v want=%v", got, want)
+		}
+	}
 
-				go func() {
-					defer wg.Done()
-					val, err := p.Get(context.Background())
-					if err != nil {
-						t.Fatalf("has error: %v", err)
-					}
-					v := val.(*testEL)
-					atomic.AddInt32(&got, v.ID())
+	t.Run("case 1-default values", func(t *testing.T) {
+		p := NewSimple(nil, newFunc)
 
-				}()
-			}
-			wg.Wait()
-			if got != want {
-				t.Fatalf("got=%v want=%v", got, want)
-			}
+		testForEach(t, p, func(i int) int32 {
+			return int32(i)
 		})
 
+		testForEachConc(t, p, func(want *int32, i int) {
+			atomic.AddInt32(want, int32(i))
+		})
+	})
+
+	t.Run("case 2-MaxIdle_1", func(t *testing.T) {
+		opt := &Option{
+			MaxIdle: 1,
+		}
+		p := NewSimple(opt, newFunc)
+
+		testForEach(t, p, func(i int) int32 {
+			return 1
+		})
+	})
+
+	t.Run("case 3-MaxOpen_1", func(t *testing.T) {
+		opt := &Option{
+			MaxIdle: 1,
+			MaxOpen: 1,
+		}
+		p := NewSimple(opt, newFunc)
+
+		testForEach(t, p, func(i int) int32 {
+			return 1
+		})
 	})
 }

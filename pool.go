@@ -21,6 +21,7 @@ var nowFunc = time.Now
 // ErrClosed 对象池已关闭
 var ErrClosed = errors.New("already closed")
 
+// Pool 通用的 Pool 接口定义
 type Pool interface {
 	Get(ctx context.Context) (interface{}, error)
 	Put(interface{}) error
@@ -36,7 +37,7 @@ type Option struct {
 	MaxOpen int
 
 	// MaxIdle
-	// zero means defaultMaxIdleConns; < 0 means 0
+	// <=0 means disabled
 	MaxIdle int
 
 	// MaxLifetime
