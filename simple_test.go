@@ -9,6 +9,7 @@ package fspool
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -133,6 +134,17 @@ func TestNewSimple(t *testing.T) {
 		testForEach(t, p, func(i int) int32 {
 			return 1
 		})
+		t.Run("check_stats_1", func(t *testing.T) {
+			got := p.Stats()
+			want := Stats{
+				MaxOpen: 1,
+				NumOpen: 1,
+				Idle:    1,
+			}
+			if !reflect.DeepEqual(got, want) {
+				t.Errorf("got=%v want=%v", got, want)
+			}
+		})
 
 		testForEachConc(t, p, func(want *int32, i int) {
 			atomic.AddInt32(want, 1)
@@ -195,5 +207,7 @@ func TestSimplePool_Close(t *testing.T) {
 	p := NewSimple(nil, func(ctx context.Context, pool *SimplePool) (Element, error) {
 		return &testEL{id: 100, p: pool}, nil
 	})
-	testSimplePoolClose(t, p)
+	for i := 0; i < 2; i++ {
+		testSimplePoolClose(t, p)
+	}
 }

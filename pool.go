@@ -8,6 +8,7 @@ package fspool
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"time"
 )
@@ -32,7 +33,7 @@ type Pool interface {
 
 // Option pool option
 type Option struct {
-	// MaxOpen max opening element
+	// MaxOpen max opening Element
 	// <= 0 means unlimited
 	MaxOpen int
 
@@ -41,11 +42,11 @@ type Option struct {
 	MaxIdle int
 
 	// MaxLifetime
-	// maximum amount of time a connection may be reused
+	// maximum amount of time a Element may be reused
 	MaxLifetime time.Duration
 
 	// MaxIdleTime
-	// maximum amount of time a connection may be idle before being closed
+	// maximum amount of time a Element may be idle before being closed
 	MaxIdleTime time.Duration
 }
 
@@ -64,19 +65,25 @@ func (opt *Option) shortestIdleTime() time.Duration {
 	return min
 }
 
-// Stats 状态
+// Stats Pool's Stats
 type Stats struct {
-	MaxOpen int // Maximum number of open connections to the database.
+	MaxOpen int // Maximum number of open Elements to the Pool.
 
 	// SimplePool Status
-	NumOpen int // The number of established connections both in use and idle.
-	InUse   int // The number of connections currently in use.
-	Idle    int // The number of idle connections.
+	NumOpen int // The number of established Elements both in use and idle.
+	InUse   int // The number of Elements currently in use.
+	Idle    int // The number of idle Elements.
 
 	// Counters
-	WaitCount         int64         // The total number of connections waited for.
-	WaitDuration      time.Duration // The total time blocked waiting for a new connection.
-	MaxIdleClosed     int64         // The total number of connections closed due to SetMaxIdleConns.
-	MaxIdleTimeClosed int64         // The total number of connections closed due to SetConnMaxIdleTime.
-	MaxLifetimeClosed int64         // The total number of connections closed due to SetConnMaxLifetime.
+	WaitCount         int64         // The total number of Elements waited for.
+	WaitDuration      time.Duration // The total time blocked waiting for a new Element.
+	MaxIdleClosed     int64         // The total number of Elements closed.
+	MaxIdleTimeClosed int64         // The total number of Elements closed.
+	MaxLifetimeClosed int64         // The total number of Elements closed.
+}
+
+// String 序列化，调试用
+func (s Stats) String() string {
+	bf, _ := json.Marshal(s)
+	return string(bf)
 }

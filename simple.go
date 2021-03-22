@@ -433,13 +433,9 @@ func (p *SimplePool) elementCleanerRunLocked() (closing []Element) {
 	return
 }
 
-const defaultMaxIdleElements = 2
-
 func (p *SimplePool) maxIdleElementsLocked() int {
 	n := p.option.MaxIdle
 	switch {
-	case n == 0:
-		return defaultMaxIdleElements
 	case n < 0:
 		return 0
 	default:
