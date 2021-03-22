@@ -8,14 +8,12 @@ package fspool
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 )
-
-type testIDer interface {
-	ID() int32
-}
 
 type testEL struct {
 	id int32
@@ -135,5 +133,67 @@ func TestNewSimple(t *testing.T) {
 		testForEach(t, p, func(i int) int32 {
 			return 1
 		})
+
+		testForEachConc(t, p, func(want *int32, i int) {
+			atomic.AddInt32(want, 1)
+		})
+
+		t.Run("slow", func(t *testing.T) {
+			el, errGet := p.Get(context.Background())
+			if errGet != nil {
+				t.Fatalf("unexpect error:%v", errGet)
+			}
+
+			// 由于 MaxOpen=1 所以不能正常的获取到 元素
+			t.Run("timeout", func(t *testing.T) {
+				for i := 0; i < 5; i++ {
+					t.Run(fmt.Sprintf("case %d", i), func(t *testing.T) {
+						ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
+						defer cancel()
+						_, err2 := p.Get(ctx)
+						want := context.DeadlineExceeded
+						if err2 != want {
+							t.Fatalf("err got=%v want=%v", err2, want)
+						}
+					})
+				}
+			})
+
+			// 关闭后，元素回收，可以正常的获取
+			el.Close()
+
+			t.Run("get_suc", func(t *testing.T) {
+				ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
+				defer cancel()
+				el2, err2 := p.Get(ctx)
+				if err2 != nil {
+					t.Fatalf("unexpect error=%v", err2)
+				}
+				defer el2.Close()
+			})
+
+		})
 	})
+}
+
+func testSimplePoolClose(t *testing.T, p *SimplePool) {
+	t.Run("Close", func(t *testing.T) {
+		if err := p.Close(); err != nil {
+			t.Fatalf("Close() has error=%v", err)
+		}
+		el, err := p.Get(context.Background())
+		if err == nil {
+			t.Fatalf("expect not nil")
+		}
+		if el != nil {
+			t.Fatalf("expect nil")
+		}
+	})
+}
+
+func TestSimplePool_Close(t *testing.T) {
+	p := NewSimple(nil, func(ctx context.Context, pool *SimplePool) (Element, error) {
+		return &testEL{id: 100, p: pool}, nil
+	})
+	testSimplePoolClose(t, p)
 }

@@ -35,9 +35,8 @@ func (t *testEL) Active() bool {
 func (t *testEL) Close() error {
 	if t.Active() {
 		return t.p.Put(t)
-	} else {
-		return t.RawClose()
 	}
+	return t.RawClose()
 }
 
 func (t *testEL) RawClose() error {
