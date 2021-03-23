@@ -41,9 +41,9 @@ type Option struct {
 	// <=0 means disabled
 	MaxIdle int
 
-	// MaxLifetime
+	// MaxLifeTime
 	// maximum amount of time a Element may be reused
-	MaxLifetime time.Duration
+	MaxLifeTime time.Duration
 
 	// MaxIdleTime
 	// maximum amount of time a Element may be idle before being closed
@@ -52,15 +52,15 @@ type Option struct {
 
 func (opt *Option) shortestIdleTime() time.Duration {
 	if opt.MaxIdleTime <= 0 {
-		return opt.MaxLifetime
+		return opt.MaxLifeTime
 	}
-	if opt.MaxLifetime <= 0 {
+	if opt.MaxLifeTime <= 0 {
 		return opt.MaxIdleTime
 	}
 
 	min := opt.MaxIdleTime
-	if min > opt.MaxLifetime {
-		min = opt.MaxLifetime
+	if min > opt.MaxLifeTime {
+		min = opt.MaxLifeTime
 	}
 	return min
 }

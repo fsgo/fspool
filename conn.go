@@ -22,18 +22,12 @@ type NewConnFunc func(ctx context.Context) (net.Conn, error)
 
 // Trans 转换为原始的 NewElementFunc
 func (nf NewConnFunc) Trans(p *ConnPool) NewElementFunc {
-	opt := p.Option()
 	return func(ctx context.Context, pool *SimplePool) (Element, error) {
 		raw, err := nf(ctx)
 		if err != nil {
 			return nil, err
 		}
-		vc := newConn(raw, &opt, func(conn *conn) error {
-			if conn.Active() {
-				return p.Put(conn)
-			}
-			return conn.RawClose()
-		})
+		vc := newConn(raw, p)
 		return vc, nil
 	}
 }
@@ -89,25 +83,23 @@ const (
 	statDone
 )
 
-func newConn(raw net.Conn, option *Option, onClose func(conn *conn) error) *conn {
+func newConn(raw net.Conn, p *ConnPool) *conn {
 	return &conn{
-		raw:     raw,
-		onClose: onClose,
-		ctime:   time.Now(),
+		raw:          raw,
+		p:            p,
+		WithTimeInfo: NewWithTimeInfo(),
 	}
 }
 
 type conn struct {
-	option *Option
+	*WithTimeInfo
 
-	raw     net.Conn
-	onClose func(conn *conn) error
+	p *ConnPool
 
-	mu        sync.RWMutex
-	lastErr   error
-	ctime     time.Time
-	lastRead  time.Time
-	lastWrite time.Time
+	raw net.Conn
+
+	mu      sync.RWMutex
+	lastErr error
 
 	readStat  uint8
 	writeStat uint8
@@ -122,36 +114,38 @@ func (c *conn) setErr(err error) {
 }
 
 func (c *conn) Read(b []byte) (n int, err error) {
+	c.WithTimeInfo.MarkUsed()
+
 	c.withLock(func() {
 		c.readStat = statStart
 	})
 	n, err = c.raw.Read(b)
 	c.setErr(err)
 	c.withLock(func() {
-		c.lastRead = time.Now()
 		c.readStat = statDone
 	})
 	return n, err
 }
 
 func (c *conn) Write(b []byte) (n int, err error) {
+	c.WithTimeInfo.MarkUsed()
+
 	c.withLock(func() {
 		c.writeStat = statStart
 	})
 	n, err = c.raw.Write(b)
 	c.setErr(err)
 	c.withLock(func() {
-		c.lastWrite = time.Now()
 		c.writeStat = statDone
 	})
 	return n, err
 }
 
 func (c *conn) Close() error {
-	if c.onClose != nil {
-		return c.onClose(c)
+	if c.PEIsActive() {
+		return c.p.Put(c)
 	}
-	return c.raw.Close()
+	return c.PERawClose()
 }
 
 func (c *conn) LocalAddr() net.Addr {
@@ -190,40 +184,35 @@ func (c *conn) isDoing() bool {
 	return c.readStat == statStart || c.writeStat == statStart
 }
 
-func (c *conn) lastRWTime() time.Time {
-	if c.lastRead.After(c.lastWrite) {
-		return c.lastRead
-	}
-	return c.lastWrite
-}
-
 func (c *conn) Raw() net.Conn {
 	return c.raw
 }
 
-func (c *conn) RawClose() error {
+func (c *conn) PERawClose() error {
 	return c.raw.Close()
 }
 
-func (c *conn) Active() bool {
+func (c *conn) PEIsActive() bool {
 	c.mu.RLock()
-	defer c.mu.RUnlock()
+
 	if c.lastErr != nil {
+		c.mu.RUnlock()
 		return false
 	}
 
 	if c.isDoing() {
+		c.mu.RUnlock()
 		return false
 	}
 
-	if c.option.MaxIdleTime > 0 {
-		if c.lastRWTime().Add(c.option.MaxIdleTime).Before(nowFunc()) {
-			return false
-		}
+	c.mu.RUnlock()
+
+	if !c.WithTimeInfo.IsActive(c.p.Option()) {
+		return false
 	}
 
-	if c.option.MaxLifetime > 0 {
-		if c.ctime.Add(c.option.MaxLifetime).Before(nowFunc()) {
+	if ra, ok := c.raw.(PEIsActiver); ok {
+		if !ra.PEIsActive() {
 			return false
 		}
 	}

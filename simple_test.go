@@ -17,26 +17,28 @@ import (
 )
 
 type testEL struct {
+	*WithTimeInfo
 	id int32
 	p  *SimplePool
 }
 
 func (t *testEL) ID() int32 {
+	t.WithTimeInfo.MarkUsed()
 	return t.id
 }
 
-func (t *testEL) Active() bool {
-	return true
+func (t *testEL) PEIsActive() bool {
+	return t.WithTimeInfo.IsActive(t.p.Option())
 }
 
 func (t *testEL) Close() error {
-	if t.Active() {
+	if t.PEIsActive() {
 		return t.p.Put(t)
 	}
-	return t.RawClose()
+	return t.PERawClose()
 }
 
-func (t *testEL) RawClose() error {
+func (t *testEL) PERawClose() error {
 	return nil
 }
 
@@ -51,7 +53,7 @@ func TestNewSimple(t *testing.T) {
 
 	newFunc := func(ctx context.Context, p *SimplePool) (Element, error) {
 		v := atomic.AddInt32(&id, 1)
-		return &testEL{id: v, p: p}, nil
+		return &testEL{id: v, p: p, WithTimeInfo: NewWithTimeInfo()}, nil
 	}
 
 	testForEach := func(t *testing.T, p *SimplePool, getWant func(i int) int32) {

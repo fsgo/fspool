@@ -15,9 +15,19 @@ import (
 
 // Element pool element
 type Element interface {
-	Active() bool
-	RawClose() error
+	// PEIsActive 判断元素是否有效
+	PEIsActive() bool
+	
+	// PERawClose 元素最元素的 close
+	PERawClose() error
+	
+	// Close 当前元素放回 pool 或者 销毁
 	Close() error
+}
+
+// PEIsActiver 是否有效
+type PEIsActiver interface {
+	PEIsActive() bool
 }
 
 // NewElementFunc new element func
@@ -96,7 +106,7 @@ func (p *SimplePool) openNewElement(ctx context.Context) {
 	defer p.mu.Unlock()
 	if p.closed {
 		if err == nil {
-			ci.RawClose()
+			ci.PERawClose()
 		}
 		p.numOpen--
 		return
@@ -111,7 +121,7 @@ func (p *SimplePool) openNewElement(ctx context.Context) {
 
 	if !p.putElementPoolLocked(ci, err) {
 		p.numOpen--
-		ci.RawClose()
+		ci.PERawClose()
 	}
 }
 
@@ -158,10 +168,10 @@ func (p *SimplePool) selectOne(ctx context.Context) (el Element, err error) {
 		el = p.idles[0]
 		copy(p.idles, p.idles[1:])
 		p.idles = p.idles[:numFree-1]
-		if !el.Active() {
+		if !el.PEIsActive() {
 			p.maxLifetimeClosed++
 			p.mu.Unlock()
-			el.RawClose()
+			el.PERawClose()
 			return nil, ErrBadValue
 		}
 		p.mu.Unlock()
@@ -212,7 +222,7 @@ func (p *SimplePool) selectOne(ctx context.Context) (el Element, err error) {
 			// back into the element SimplePool.
 			// This prioritizes giving a valid element to a client over the exact element
 			// lifetime, which could expire exactly after this point anyway.
-			if ret.err == nil && !ret.el.Active() {
+			if ret.err == nil && !ret.el.PEIsActive() {
 				p.mu.Lock()
 				p.maxLifetimeClosed++
 				p.mu.Unlock()
@@ -274,12 +284,12 @@ func (p *SimplePool) maybeOpenNewElements() {
 // err is optionally the last error that occurred on this element.
 func (p *SimplePool) putElement(dc Element, err error) {
 	if p.option.MaxIdle < 1 {
-		dc.RawClose()
+		dc.PERawClose()
 		return
 	}
 	p.mu.Lock()
 
-	if err != ErrBadValue && !dc.Active() {
+	if err != ErrBadValue && !dc.PEIsActive() {
 		p.maxLifetimeClosed++
 		err = ErrBadValue
 	}
@@ -291,14 +301,14 @@ func (p *SimplePool) putElement(dc Element, err error) {
 		// take care of that.
 		p.maybeOpenNewElements()
 		p.mu.Unlock()
-		dc.RawClose()
+		dc.PERawClose()
 		return
 	}
 	added := p.putElementPoolLocked(dc, nil)
 	p.mu.Unlock()
 
 	if !added {
-		dc.RawClose()
+		dc.PERawClose()
 		return
 	}
 }
@@ -355,7 +365,7 @@ func (p *SimplePool) putElementPoolLocked(dc Element, err error) bool {
 
 // startCleanerLocked starts elementCleaner if needed.
 func (p *SimplePool) startCleanerLocked() {
-	if (p.option.MaxLifetime > 0 || p.option.MaxIdleTime > 0) && p.numOpen > 0 && p.cleanerCh == nil {
+	if (p.option.MaxLifeTime > 0 || p.option.MaxIdleTime > 0) && p.numOpen > 0 && p.cleanerCh == nil {
 		p.cleanerCh = make(chan struct{}, 1)
 		// 一个 pool 只会启动一个 gor
 		go p.elementCleaner(p.option.shortestIdleTime())
@@ -373,7 +383,7 @@ func (p *SimplePool) elementCleaner(d time.Duration) {
 	for {
 		select {
 		case <-t.C:
-		case <-p.cleanerCh: // MaxLifetime was changed or db was closed.
+		case <-p.cleanerCh: // MaxLifeTime was changed or db was closed.
 		}
 
 		p.mu.Lock()
@@ -399,10 +409,10 @@ func (p *SimplePool) elementCleaner(d time.Duration) {
 }
 
 func (p *SimplePool) elementCleanerRunLocked() (closing []Element) {
-	if p.option.MaxLifetime > 0 {
+	if p.option.MaxLifeTime > 0 {
 		for i := 0; i < len(p.idles); i++ {
 			c := p.idles[i]
-			if !c.Active() {
+			if !c.PEIsActive() {
 				closing = append(closing, c)
 				last := len(p.idles) - 1
 				p.idles[i] = p.idles[last]
@@ -418,7 +428,7 @@ func (p *SimplePool) elementCleanerRunLocked() (closing []Element) {
 		var expiredCount int64
 		for i := 0; i < len(p.idles); i++ {
 			c := p.idles[i]
-			if !c.Active() {
+			if !c.PEIsActive() {
 				closing = append(closing, c)
 				expiredCount++
 				last := len(p.idles) - 1
@@ -494,4 +504,40 @@ func (p *SimplePool) Close() error {
 	}
 	p.stop()
 	return err
+}
+
+// NewWithTimeInfo 创建一个 *WithTimeInfo
+func NewWithTimeInfo() *WithTimeInfo {
+	return &WithTimeInfo{
+		createTime: time.Now(),
+	}
+}
+
+// WithTimeInfo 包含 创建时间和使用时间
+type WithTimeInfo struct {
+	createTime  time.Time
+	lastUseTime time.Time
+	mu          sync.Mutex
+}
+
+// MarkUsed 标记已使用
+func (w *WithTimeInfo) MarkUsed() {
+	w.mu.Lock()
+	w.lastUseTime = time.Now()
+	w.mu.Unlock()
+}
+
+// IsActive 是否在有效期内
+func (w *WithTimeInfo) IsActive(opt Option) bool {
+	w.mu.Lock()
+	lastUse := w.lastUseTime
+	w.mu.Unlock()
+
+	if opt.MaxIdleTime > 0 && time.Since(lastUse) >= opt.MaxIdleTime {
+		return false
+	}
+	if opt.MaxLifeTime > 0 && time.Since(w.createTime) >= opt.MaxLifeTime {
+		return false
+	}
+	return true
 }

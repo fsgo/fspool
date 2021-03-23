@@ -28,18 +28,18 @@ func (t *testEL) ID() int32 {
 	return t.id
 }
 
-func (t *testEL) Active() bool {
+func (t *testEL) PEIsActive() bool {
 	return true
 }
 
 func (t *testEL) Close() error {
-	if t.Active() {
+	if t.PEIsActive() {
 		return t.p.Put(t)
 	}
-	return t.RawClose()
+	return t.PERawClose()
 }
 
-func (t *testEL) RawClose() error {
+func (t *testEL) PERawClose() error {
 	return nil
 }
 
