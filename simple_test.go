@@ -18,8 +18,14 @@ import (
 
 type testEL struct {
 	*WithTimeInfo
-	id int32
-	p  *SimplePool
+	id   int32
+	p    *SimplePool
+	name string
+}
+
+func (t *testEL) Name() string {
+	t.WithTimeInfo.MarkUsed()
+	return t.name
 }
 
 func (t *testEL) ID() int32 {
