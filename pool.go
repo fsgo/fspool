@@ -79,7 +79,7 @@ type Stats struct {
 	WaitDuration      time.Duration // The total time blocked waiting for a new Element.
 	MaxIdleClosed     int64         // The total number of Elements closed.
 	MaxIdleTimeClosed int64         // The total number of Elements closed.
-	MaxLifetimeClosed int64         // The total number of Elements closed.
+	MaxLifeTimeClosed int64         // The total number of Elements closed.
 }
 
 // String 序列化，调试用

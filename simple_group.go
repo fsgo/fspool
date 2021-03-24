@@ -86,7 +86,7 @@ func (g *SimpleGroup) Stats() Stats {
 		rt.WaitDuration += ls.WaitDuration
 		rt.MaxIdleClosed += ls.MaxIdleClosed
 		rt.MaxIdleTimeClosed += ls.MaxIdleTimeClosed
-		rt.MaxLifetimeClosed += ls.MaxLifetimeClosed
+		rt.MaxLifeTimeClosed += ls.MaxLifeTimeClosed
 	}
 	return rt
 }

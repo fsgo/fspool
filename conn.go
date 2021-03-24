@@ -11,11 +11,12 @@ import (
 	"errors"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
 // ErrNotPoolConn 不是 ConnPool 支持的类型
-var ErrNotPoolConn = errors.New("not pool conn")
+var ErrNotPoolConn = errors.New("not pool pConn")
 
 // NewConnFunc 创建新
 type NewConnFunc func(ctx context.Context) (net.Conn, error)
@@ -56,7 +57,7 @@ func (cp *ConnPool) Get(ctx context.Context) (el net.Conn, err error) {
 
 // Put put to pool
 func (cp *ConnPool) Put(cn net.Conn) error {
-	if v, ok := cn.(*conn); ok {
+	if v, ok := cn.(*pConn); ok {
 		return cp.raw.Put(v)
 	}
 	cn.Close()
@@ -83,15 +84,15 @@ const (
 	statDone
 )
 
-func newConn(raw net.Conn, p *ConnPool) *conn {
-	return &conn{
+func newConn(raw net.Conn, p *ConnPool) *pConn {
+	return &pConn{
 		raw:          raw,
 		p:            p,
 		WithTimeInfo: NewWithTimeInfo(),
 	}
 }
 
-type conn struct {
+type pConn struct {
 	*WithTimeInfo
 
 	p *ConnPool
@@ -103,9 +104,10 @@ type conn struct {
 
 	readStat  uint8
 	writeStat uint8
+	closeNum  int64
 }
 
-func (c *conn) setErr(err error) {
+func (c *pConn) setErr(err error) {
 	if err != nil {
 		c.mu.Lock()
 		c.lastErr = err
@@ -113,7 +115,7 @@ func (c *conn) setErr(err error) {
 	}
 }
 
-func (c *conn) Read(b []byte) (n int, err error) {
+func (c *pConn) Read(b []byte) (n int, err error) {
 	c.WithTimeInfo.MarkUsed()
 
 	c.withLock(func() {
@@ -127,7 +129,7 @@ func (c *conn) Read(b []byte) (n int, err error) {
 	return n, err
 }
 
-func (c *conn) Write(b []byte) (n int, err error) {
+func (c *pConn) Write(b []byte) (n int, err error) {
 	c.WithTimeInfo.MarkUsed()
 
 	c.withLock(func() {
@@ -141,66 +143,66 @@ func (c *conn) Write(b []byte) (n int, err error) {
 	return n, err
 }
 
-func (c *conn) Close() error {
+func (c *pConn) Close() error {
+	n := atomic.AddInt64(&c.closeNum, 1)
 	if c.PEIsActive() {
-		return c.p.Put(c)
+		// 避免多次 调用 close,造成连接池里元素重复
+		if atomic.LoadInt64(&c.closeNum) == n {
+			return c.p.Put(c)
+		}
+		return nil
 	}
 	return c.PERawClose()
 }
 
-func (c *conn) LocalAddr() net.Addr {
+func (c *pConn) LocalAddr() net.Addr {
 	return c.raw.LocalAddr()
 }
 
-func (c *conn) RemoteAddr() net.Addr {
+func (c *pConn) RemoteAddr() net.Addr {
 	return c.raw.RemoteAddr()
 }
 
-func (c *conn) SetDeadline(t time.Time) error {
+func (c *pConn) SetDeadline(t time.Time) error {
 	err := c.raw.SetDeadline(t)
 	c.setErr(err)
 	return err
 }
 
-func (c *conn) SetReadDeadline(t time.Time) error {
+func (c *pConn) SetReadDeadline(t time.Time) error {
 	err := c.raw.SetReadDeadline(t)
 	c.setErr(err)
 	return err
 }
 
-func (c *conn) SetWriteDeadline(t time.Time) error {
+func (c *pConn) SetWriteDeadline(t time.Time) error {
 	err := c.raw.SetWriteDeadline(t)
 	c.setErr(err)
 	return err
 }
 
-func (c *conn) withLock(fn func()) {
+func (c *pConn) withLock(fn func()) {
 	c.mu.Lock()
 	fn()
 	c.mu.Unlock()
 }
 
-func (c *conn) isDoing() bool {
+func (c *pConn) isDoing() bool {
 	return c.readStat == statStart || c.writeStat == statStart
 }
 
-func (c *conn) Raw() net.Conn {
+func (c *pConn) Raw() net.Conn {
 	return c.raw
 }
 
-func (c *conn) PERawClose() error {
+func (c *pConn) PERawClose() error {
 	return c.raw.Close()
 }
 
-func (c *conn) PEIsActive() bool {
+func (c *pConn) PEIsActive() bool {
 	c.mu.RLock()
 
-	if c.lastErr != nil {
-		c.mu.RUnlock()
-		return false
-	}
-
-	if c.isDoing() {
+	if c.lastErr != nil || c.isDoing() {
 		c.mu.RUnlock()
 		return false
 	}
@@ -219,5 +221,5 @@ func (c *conn) PEIsActive() bool {
 	return true
 }
 
-var _ net.Conn = (*conn)(nil)
-var _ Element = (*conn)(nil)
+var _ net.Conn = (*pConn)(nil)
+var _ Element = (*pConn)(nil)

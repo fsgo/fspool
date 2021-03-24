@@ -17,10 +17,10 @@ import (
 type Element interface {
 	// PEIsActive 判断元素是否有效
 	PEIsActive() bool
-	
+
 	// PERawClose 元素最元素的 close
 	PERawClose() error
-	
+
 	// Close 当前元素放回 pool 或者 销毁
 	Close() error
 }
@@ -296,7 +296,7 @@ func (p *SimplePool) putElement(dc Element, err error) {
 
 	if err == ErrBadValue {
 		// Don't reuse bad Element.
-		// Since the conn is considered bad and is being discarded, treat it
+		// Since the pConn is considered bad and is being discarded, treat it
 		// as closed. Don't decrement the open count here, finalClose will
 		// take care of that.
 		p.maybeOpenNewElements()
@@ -470,7 +470,7 @@ func (p *SimplePool) Stats() Stats {
 		WaitDuration:      time.Duration(wait),
 		MaxIdleClosed:     p.maxIdleClosed,
 		MaxIdleTimeClosed: p.maxIdleTimeClosed,
-		MaxLifetimeClosed: p.maxLifetimeClosed,
+		MaxLifeTimeClosed: p.maxLifetimeClosed,
 	}
 	return stats
 }
