@@ -27,7 +27,7 @@ func NewSimpleGroup(opt *Option, gn GroupNewElementFunc) *SimpleGroup {
 		done:      cancel,
 		genNewEle: gn,
 	}
-	go g.poolCleaner(ctx, time.Minute)
+	go g.poolCleaner(ctx, opt.shortestIdleTime())
 	return g
 }
 
@@ -66,29 +66,36 @@ func (g *SimpleGroup) getPool(key interface{}) *groupPoolItem {
 	return p
 }
 
-// Stats ...
-func (g *SimpleGroup) Stats() Stats {
-	rt := Stats{}
+// GroupStats Group 的状态信息
+func (g *SimpleGroup) GroupStats() GroupStats {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
-	if g.pools == nil {
-		return rt
+	gs := GroupStats{
+		Groups: make(map[interface{}]Stats, len(g.pools)),
+		All:    Stats{},
 	}
 
-	for _, p := range g.pools {
-		ls := p.Stats()
-		rt.MaxOpen += ls.MaxOpen
-		rt.Idle += ls.Idle
-		rt.NumOpen += ls.NumOpen
-		rt.InUse += ls.InUse
-		rt.WaitCount += ls.WaitCount
-		rt.WaitDuration += ls.WaitDuration
-		rt.MaxIdleClosed += ls.MaxIdleClosed
-		rt.MaxIdleTimeClosed += ls.MaxIdleTimeClosed
-		rt.MaxLifeTimeClosed += ls.MaxLifeTimeClosed
+	if g.pools == nil {
+		return gs
 	}
-	return rt
+
+	for key, p := range g.pools {
+		ls := p.Stats()
+
+		gs.Groups[key] = ls
+
+		gs.All.MaxOpen += ls.MaxOpen
+		gs.All.Idle += ls.Idle
+		gs.All.NumOpen += ls.NumOpen
+		gs.All.InUse += ls.InUse
+		gs.All.WaitCount += ls.WaitCount
+		gs.All.WaitDuration += ls.WaitDuration
+		gs.All.MaxIdleClosed += ls.MaxIdleClosed
+		gs.All.MaxIdleTimeClosed += ls.MaxIdleTimeClosed
+		gs.All.MaxLifeTimeClosed += ls.MaxLifeTimeClosed
+	}
+	return gs
 }
 
 // Close close pools

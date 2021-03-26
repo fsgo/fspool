@@ -87,3 +87,9 @@ func (s Stats) String() string {
 	bf, _ := json.Marshal(s)
 	return string(bf)
 }
+
+// GroupStats Group Pool stats
+type GroupStats struct {
+	Groups map[interface{}]Stats
+	All    Stats
+}

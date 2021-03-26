@@ -74,7 +74,8 @@ func TestNewSimpleGroup(t *testing.T) {
 			})
 
 			t.Run("Stats", func(t *testing.T) {
-				got := pg.Stats()
+				gs := pg.GroupStats()
+				got := gs.All
 				want := Stats{
 					NumOpen: i + 1,
 					InUse:   i + 1,
