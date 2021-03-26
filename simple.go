@@ -98,8 +98,8 @@ func (p *SimplePool) elementOpener(ctx context.Context) {
 
 // Open one new element
 func (p *SimplePool) openNewElement(ctx context.Context) {
-	// openNewElement has already executed p.numOpen++ before it sent
-	// on p.openerCh. This function must execute p.numOpen-- if the
+	// openNewElement has already executed pool.numOpen++ before it sent
+	// on pool.openerCh. This function must execute pool.numOpen-- if the
 	// element fails or is closed before returning.
 	ci, err := p.newElement(ctx)
 	p.mu.Lock()
@@ -259,7 +259,7 @@ func (p *SimplePool) nextRequestKeyLocked() uint64 {
 	return next
 }
 
-// Assumes p.mu is locked.
+// Assumes pool.mu is locked.
 // If there are elementRequests and the connection limit hasn't been reached,
 // then tell the elementOpener to open new elements.
 func (p *SimplePool) maybeOpenNewElements() {

@@ -11,7 +11,6 @@ import (
 	"errors"
 	"net"
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
@@ -28,7 +27,7 @@ func (nf NewConnFunc) Trans(p *ConnPool) NewElementFunc {
 		if err != nil {
 			return nil, err
 		}
-		vc := newConn(raw, p)
+		vc := newPConn(raw, p)
 		return vc, nil
 	}
 }
@@ -80,22 +79,26 @@ func (cp *ConnPool) Stats() Stats {
 }
 
 const (
-	statStart = iota
+	statInit = iota
+	statStart
 	statDone
 )
 
-func newConn(raw net.Conn, p *ConnPool) *pConn {
+func newPConn(raw net.Conn, p *ConnPool) *pConn {
 	return &pConn{
 		raw:          raw,
-		p:            p,
+		pool:         p,
 		WithTimeInfo: NewWithTimeInfo(),
 	}
 }
 
+var _ net.Conn = (*pConn)(nil)
+var _ Element = (*pConn)(nil)
+
 type pConn struct {
 	*WithTimeInfo
 
-	p *ConnPool
+	pool *ConnPool
 
 	raw net.Conn
 
@@ -104,7 +107,6 @@ type pConn struct {
 
 	readStat  uint8
 	writeStat uint8
-	closeNum  int64
 }
 
 func (c *pConn) setErr(err error) {
@@ -144,13 +146,12 @@ func (c *pConn) Write(b []byte) (n int, err error) {
 }
 
 func (c *pConn) Close() error {
-	n := atomic.AddInt64(&c.closeNum, 1)
 	if c.PEIsActive() {
-		// 避免多次 调用 close,造成连接池里元素重复
-		if atomic.LoadInt64(&c.closeNum) == n {
-			return c.p.Put(c)
-		}
-		return nil
+		c.withLock(func() {
+			c.readStat = statInit
+			c.writeStat = statInit
+		})
+		return c.pool.Put(c)
 	}
 	return c.PERawClose()
 }
@@ -209,7 +210,7 @@ func (c *pConn) PEIsActive() bool {
 
 	c.mu.RUnlock()
 
-	if !c.WithTimeInfo.IsActive(c.p.Option()) {
+	if !c.WithTimeInfo.IsActive(c.pool.Option()) {
 		return false
 	}
 
@@ -220,6 +221,3 @@ func (c *pConn) PEIsActive() bool {
 	}
 	return true
 }
-
-var _ net.Conn = (*pConn)(nil)
-var _ Element = (*pConn)(nil)

@@ -100,8 +100,6 @@ func TestNewConnPool(t *testing.T) {
 
 				t.Logf("cp.Get()=%s", conn.RemoteAddr())
 
-				defer conn.Close()
-
 				sendContent := []byte(fmt.Sprintf("loop %d", i))
 
 				{
@@ -138,12 +136,15 @@ func TestNewConnPool(t *testing.T) {
 					}
 				}
 
+				_ = conn.Close()
+
 				t.Run("stats", func(t *testing.T) {
 					got := cp.Stats()
 					want := Stats{
 						MaxOpen: 10,
 						NumOpen: 1,
-						InUse:   1,
+						InUse:   0,
+						Idle:    1,
 					}
 					if !reflect.DeepEqual(got, want) {
 						t.Fatalf("cp.Stats()=%s \n\t\t\t want=%s", got, want)
