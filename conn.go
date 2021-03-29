@@ -8,21 +8,17 @@ package fspool
 
 import (
 	"context"
-	"errors"
 	"net"
 	"sync"
 	"time"
 )
 
-// ErrNotPoolConn 不是 ConnPool 支持的类型
-var ErrNotPoolConn = errors.New("not pool pConn")
-
 // NewConnFunc 创建新
 type NewConnFunc func(ctx context.Context) (net.Conn, error)
 
 // Trans 转换为原始的 NewElementFunc
-func (nf NewConnFunc) Trans(p *ConnPool) NewElementFunc {
-	return func(ctx context.Context, pool *SimplePool) (Element, error) {
+func (nf NewConnFunc) Trans(p *connPool) NewElementFunc {
+	return func(ctx context.Context, pool NewElementNeed) (Element, error) {
 		raw, err := nf(ctx)
 		if err != nil {
 			return nil, err
@@ -33,19 +29,27 @@ func (nf NewConnFunc) Trans(p *ConnPool) NewElementFunc {
 }
 
 // NewConnPool 创建新的 net.Conn 的连接池
-func NewConnPool(option *Option, newFunc NewConnFunc) *ConnPool {
-	p := &ConnPool{}
+func NewConnPool(option *Option, newFunc NewConnFunc) ConnPool {
+	p := &connPool{}
 	p.raw = NewSimple(option, newFunc.Trans(p))
 	return p
 }
 
 // ConnPool 网络连接池
-type ConnPool struct {
-	raw *SimplePool
+type ConnPool interface {
+	Get(ctx context.Context) (net.Conn, error)
+	Option() Option
+	Stats() Stats
+	Close() error
+}
+
+// connPool 网络连接池
+type connPool struct {
+	raw SimplePool
 }
 
 // Get get
-func (cp *ConnPool) Get(ctx context.Context) (el net.Conn, err error) {
+func (cp *connPool) Get(ctx context.Context) (el net.Conn, err error) {
 	value, err := cp.raw.Get(ctx)
 	if err != nil {
 		return nil, err
@@ -55,26 +59,23 @@ func (cp *ConnPool) Get(ctx context.Context) (el net.Conn, err error) {
 }
 
 // Put put to pool
-func (cp *ConnPool) Put(cn net.Conn) error {
-	if v, ok := cn.(*pConn); ok {
-		return cp.raw.Put(v)
-	}
-	cn.Close()
-	return ErrNotPoolConn
+func (cp *connPool) Put(value interface{}) error {
+	// if type invalid, then panic
+	return cp.raw.(NewElementNeed).Put(value.(*pConn))
 }
 
 // Close close pool
-func (cp *ConnPool) Close() error {
+func (cp *connPool) Close() error {
 	return cp.raw.Close()
 }
 
 // Option get pool option
-func (cp *ConnPool) Option() Option {
+func (cp *connPool) Option() Option {
 	return cp.raw.Option()
 }
 
 // Stats get pool stats
-func (cp *ConnPool) Stats() Stats {
+func (cp *connPool) Stats() Stats {
 	return cp.raw.Stats()
 }
 
@@ -84,7 +85,7 @@ const (
 	statDone
 )
 
-func newPConn(raw net.Conn, p *ConnPool) *pConn {
+func newPConn(raw net.Conn, p NewElementNeed) *pConn {
 	return &pConn{
 		raw:          raw,
 		pool:         p,
@@ -98,7 +99,7 @@ var _ Element = (*pConn)(nil)
 type pConn struct {
 	*WithTimeInfo
 
-	pool *ConnPool
+	pool NewElementNeed
 
 	raw net.Conn
 

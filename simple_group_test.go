@@ -23,7 +23,7 @@ func TestNewSimpleGroup(t *testing.T) {
 		atomic.StoreInt32(&id, 0)
 	}
 	newFunc := func(key interface{}) NewElementFunc {
-		return func(ctx context.Context, pool *SimplePool) (Element, error) {
+		return func(ctx context.Context, pool NewElementNeed) (Element, error) {
 			v := atomic.AddInt32(&id, 1)
 			item := &testEL{
 				id:           v,
@@ -53,7 +53,7 @@ func TestNewSimpleGroup(t *testing.T) {
 		defer resetID()
 
 		key := "abc"
-		pg := NewSimpleGroup(nil, newFunc)
+		pg := NewSimplePoolGroup(nil, newFunc).(*simpleGroup)
 		for i := 0; i < 100; i++ {
 			t.Run(fmt.Sprintf("for_%d", i), func(t *testing.T) {
 				v, err := pg.Get(context.Background(), key)
@@ -77,8 +77,9 @@ func TestNewSimpleGroup(t *testing.T) {
 				gs := pg.GroupStats()
 				got := gs.All
 				want := Stats{
-					NumOpen: i + 1,
-					InUse:   i + 1,
+					NumOpen:       0,
+					InUse:         0,
+					MaxIdleClosed: int64(i) + 1,
 				}
 
 				if !reflect.DeepEqual(got, want) {

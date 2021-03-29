@@ -8,7 +8,6 @@ package fspool
 
 import (
 	"context"
-	"errors"
 	"sync"
 	"time"
 )
@@ -16,14 +15,14 @@ import (
 // GroupNewElementFunc 给 Group 创建新的 pool
 type GroupNewElementFunc func(key interface{}) NewElementFunc
 
-// NewSimpleGroup 创建新的 Group
-func NewSimpleGroup(opt *Option, gn GroupNewElementFunc) *SimpleGroup {
+// NewSimplePoolGroup 创建新的 Group
+func NewSimplePoolGroup(opt *Option, gn GroupNewElementFunc) SimplePoolGroup {
 	if opt == nil {
 		opt = &Option{}
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	g := &SimpleGroup{
-		option:    *opt,
+	g := &simpleGroup{
+		option:    *opt.Clone(),
 		done:      cancel,
 		genNewEle: gn,
 	}
@@ -31,8 +30,17 @@ func NewSimpleGroup(opt *Option, gn GroupNewElementFunc) *SimpleGroup {
 	return g
 }
 
-// SimpleGroup group pool
-type SimpleGroup struct {
+// SimplePoolGroup 通用的、 按照 key 分组的 Pool
+type SimplePoolGroup interface {
+	Get(ctx context.Context, key interface{}) (Element, error)
+	GroupStats() GroupStats
+	Close() error
+}
+
+var _ SimplePoolGroup = (*simpleGroup)(nil)
+
+// simpleGroup group pool
+type simpleGroup struct {
 	option    Option
 	genNewEle GroupNewElementFunc
 	pools     map[interface{}]*groupPoolItem
@@ -40,15 +48,12 @@ type SimpleGroup struct {
 	done      context.CancelFunc
 }
 
-// ErrNotExists 不存在
-var ErrNotExists = errors.New("not exists")
-
 // Get ...
-func (g *SimpleGroup) Get(ctx context.Context, key interface{}) (Element, error) {
+func (g *simpleGroup) Get(ctx context.Context, key interface{}) (Element, error) {
 	return g.getPool(key).Get(ctx)
 }
 
-func (g *SimpleGroup) getPool(key interface{}) *groupPoolItem {
+func (g *simpleGroup) getPool(key interface{}) *groupPoolItem {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
@@ -67,7 +72,7 @@ func (g *SimpleGroup) getPool(key interface{}) *groupPoolItem {
 }
 
 // GroupStats Group 的状态信息
-func (g *SimpleGroup) GroupStats() GroupStats {
+func (g *simpleGroup) GroupStats() GroupStats {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
@@ -99,7 +104,7 @@ func (g *SimpleGroup) GroupStats() GroupStats {
 }
 
 // Close close pools
-func (g *SimpleGroup) Close() error {
+func (g *simpleGroup) Close() error {
 	g.done()
 
 	var err error
@@ -117,7 +122,7 @@ func (g *SimpleGroup) Close() error {
 	return err
 }
 
-func (g *SimpleGroup) poolCleaner(ctx context.Context, d time.Duration) {
+func (g *simpleGroup) poolCleaner(ctx context.Context, d time.Duration) {
 	const minInterval = time.Minute
 
 	if d < minInterval {
@@ -134,7 +139,7 @@ func (g *SimpleGroup) poolCleaner(ctx context.Context, d time.Duration) {
 	}
 }
 
-func (g *SimpleGroup) doCheckExpire() {
+func (g *simpleGroup) doCheckExpire() {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	if g.pools == nil {
@@ -158,10 +163,10 @@ func (g *SimpleGroup) doCheckExpire() {
 
 type groupPoolItem struct {
 	*WithTimeInfo
-	*SimplePool
+	SimplePool
 }
 
-func newGroupPoolItem(p *SimplePool) *groupPoolItem {
+func newGroupPoolItem(p SimplePool) *groupPoolItem {
 	return &groupPoolItem{
 		WithTimeInfo: NewWithTimeInfo(),
 		SimplePool:   p,

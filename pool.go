@@ -65,11 +65,21 @@ func (opt *Option) shortestIdleTime() time.Duration {
 	return min
 }
 
+// Clone copy it
+func (opt *Option) Clone() *Option {
+	return &Option{
+		MaxOpen:     opt.MaxOpen,
+		MaxIdle:     opt.MaxIdle,
+		MaxLifeTime: opt.MaxLifeTime,
+		MaxIdleTime: opt.MaxIdleTime,
+	}
+}
+
 // Stats Pool's Stats
 type Stats struct {
 	MaxOpen int // Maximum number of open Elements to the Pool.
 
-	// SimplePool Status
+	// simplePool Status
 	NumOpen int // The number of established Elements both in use and idle.
 	InUse   int // The number of Elements currently in use.
 	Idle    int // The number of idle Elements.
@@ -92,4 +102,10 @@ func (s Stats) String() string {
 type GroupStats struct {
 	Groups map[interface{}]Stats
 	All    Stats
+}
+
+// NewElementNeed 创建新 Element 时所需要的
+type NewElementNeed interface {
+	Put(interface{}) error
+	Option() Option
 }

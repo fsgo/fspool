@@ -19,7 +19,7 @@ import (
 type testEL struct {
 	*WithTimeInfo
 	id   int32
-	p    *SimplePool
+	p    NewElementNeed
 	name string
 }
 
@@ -57,12 +57,12 @@ func TestNewSimple(t *testing.T) {
 		atomic.StoreInt32(&id, 0)
 	}
 
-	newFunc := func(ctx context.Context, p *SimplePool) (Element, error) {
+	newFunc := func(ctx context.Context, p NewElementNeed) (Element, error) {
 		v := atomic.AddInt32(&id, 1)
 		return &testEL{id: v, p: p, WithTimeInfo: NewWithTimeInfo()}, nil
 	}
 
-	testForEach := func(t *testing.T, p *SimplePool, getWant func(i int) int32) {
+	testForEach := func(t *testing.T, p SimplePool, getWant func(i int) int32) {
 		defer resetID()
 
 		t.Run("foreach", func(t *testing.T) {
@@ -82,7 +82,7 @@ func TestNewSimple(t *testing.T) {
 		})
 	}
 
-	testForEachConc := func(t *testing.T, p *SimplePool, doWant func(want *int32, i int)) {
+	testForEachConc := func(t *testing.T, p SimplePool, doWant func(want *int32, i int)) {
 		defer resetID()
 		var wg sync.WaitGroup
 		var got int32
@@ -196,7 +196,7 @@ func TestNewSimple(t *testing.T) {
 	})
 }
 
-func testSimplePoolClose(t *testing.T, p *SimplePool) {
+func testSimplePoolClose(t *testing.T, p SimplePool) {
 	t.Run("Close", func(t *testing.T) {
 		if err := p.Close(); err != nil {
 			t.Fatalf("Close() has error=%v", err)
@@ -212,7 +212,7 @@ func testSimplePoolClose(t *testing.T, p *SimplePool) {
 }
 
 func TestSimplePool_Close(t *testing.T) {
-	p := NewSimple(nil, func(ctx context.Context, pool *SimplePool) (Element, error) {
+	p := NewSimple(nil, func(ctx context.Context, pool NewElementNeed) (Element, error) {
 		return &testEL{id: 100, p: pool}, nil
 	})
 	for i := 0; i < 2; i++ {
