@@ -2,6 +2,8 @@ language: go
 
 go:
   - "1.14"
+  - "1.15"
+  - "1.16"
   - master
 
-script: go test -race -cover ./... -v -timeout 10s
+script: go test -race -cover ./... -v
