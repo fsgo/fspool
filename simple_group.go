@@ -8,6 +8,7 @@ package fspool
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 )
@@ -35,6 +36,7 @@ type SimplePoolGroup interface {
 	Get(ctx context.Context, key interface{}) (Element, error)
 	GroupStats() GroupStats
 	Close() error
+	Option() Option
 }
 
 var _ SimplePoolGroup = (*simpleGroup)(nil)
@@ -48,24 +50,29 @@ type simpleGroup struct {
 	done      context.CancelFunc
 }
 
+func (g *simpleGroup) Option() Option {
+	return g.option
+}
+
 // Get ...
 func (g *simpleGroup) Get(ctx context.Context, key interface{}) (Element, error) {
 	return g.getPool(key).Get(ctx)
 }
 
 func (g *simpleGroup) getPool(key interface{}) *groupPoolItem {
+	poolID := getPoolID(key)
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
 	if g.pools == nil {
 		g.pools = make(map[interface{}]*groupPoolItem)
 	}
-	p, has := g.pools[key]
+	p, has := g.pools[poolID]
 	if !has {
 		fn := g.genNewEle(key)
 		pool := NewSimple(&g.option, fn)
 		p = newGroupPoolItem(pool)
-		g.pools[key] = p
+		g.pools[poolID] = p
 	}
 	p.MarkUsed()
 	return p
@@ -171,4 +178,16 @@ func newGroupPoolItem(p SimplePool) *groupPoolItem {
 		WithTimeInfo: NewWithTimeInfo(),
 		SimplePool:   p,
 	}
+}
+
+func getPoolID(key interface{}) interface{} {
+	if v, ok := key.(interface{ PoolID() interface{} }); ok {
+		return v.PoolID()
+	}
+
+	if v, ok := key.(fmt.Stringer); ok {
+		return v.String()
+	}
+
+	return key
 }

@@ -38,12 +38,17 @@ type ConnPoolGroup interface {
 	Get(ctx context.Context, key interface{}) (net.Conn, error)
 	GroupStats() GroupStats
 	Close() error
+	Option() Option
 }
 
 var _ ConnPoolGroup = (*connGroup)(nil)
 
 type connGroup struct {
 	raw SimplePoolGroup
+}
+
+func (cg *connGroup) Option() Option {
+	return cg.raw.Option()
 }
 
 func (cg *connGroup) Get(ctx context.Context, key interface{}) (net.Conn, error) {
