@@ -75,9 +75,15 @@ func (opt *Option) Clone() *Option {
 	}
 }
 
+// String 序列化，调试输出用
+func (opt *Option) String() string {
+	bf, _ := json.Marshal(opt)
+	return string(bf)
+}
+
 // Stats Pool's Stats
 type Stats struct {
-	MaxOpen int // Maximum number of open Elements to the Pool.
+	Open bool // pool opening status
 
 	// simplePool Status
 	NumOpen int // The number of established Elements both in use and idle.

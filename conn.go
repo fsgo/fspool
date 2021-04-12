@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-// NewConnFunc 创建新
+// NewConnFunc 创建新连接
 type NewConnFunc func(ctx context.Context) (net.Conn, error)
 
 // Trans 转换为原始的 NewElementFunc
@@ -60,6 +60,9 @@ func (cp *connPool) Get(ctx context.Context) (el net.Conn, err error) {
 
 // Put put to pool
 func (cp *connPool) Put(value interface{}) error {
+	if value == nil {
+		return cp.raw.(NewElementNeed).Put(nil)
+	}
 	// if type invalid, then panic
 	return cp.raw.(NewElementNeed).Put(value.(*pConn))
 }
@@ -154,6 +157,7 @@ func (c *pConn) Close() error {
 		})
 		return c.pool.Put(c)
 	}
+	_ = c.pool.Put(nil) // for numOpen--
 	return c.PERawClose()
 }
 

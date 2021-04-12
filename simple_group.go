@@ -48,6 +48,7 @@ type simpleGroup struct {
 	pools     map[interface{}]*groupPoolItem
 	mu        sync.Mutex
 	done      context.CancelFunc
+	closed    bool
 }
 
 func (g *simpleGroup) Option() Option {
@@ -85,7 +86,9 @@ func (g *simpleGroup) GroupStats() GroupStats {
 
 	gs := GroupStats{
 		Groups: make(map[interface{}]Stats, len(g.pools)),
-		All:    Stats{},
+		All: Stats{
+			Open: !g.closed,
+		},
 	}
 
 	if g.pools == nil {
@@ -97,7 +100,6 @@ func (g *simpleGroup) GroupStats() GroupStats {
 
 		gs.Groups[key] = ls
 
-		gs.All.MaxOpen += ls.MaxOpen
 		gs.All.Idle += ls.Idle
 		gs.All.NumOpen += ls.NumOpen
 		gs.All.InUse += ls.InUse
@@ -116,6 +118,8 @@ func (g *simpleGroup) Close() error {
 
 	var err error
 	g.mu.Lock()
+	g.closed = true
+
 	if g.pools != nil {
 		for _, p := range g.pools {
 			if e := p.Close(); e != nil {

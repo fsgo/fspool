@@ -141,7 +141,7 @@ func TestNewConnPool(t *testing.T) {
 				t.Run("stats", func(t *testing.T) {
 					got := cp.Stats()
 					want := Stats{
-						MaxOpen: 10,
+						Open:    true,
 						NumOpen: 1,
 						InUse:   0,
 						Idle:    1,

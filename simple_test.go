@@ -145,7 +145,7 @@ func TestNewSimple(t *testing.T) {
 		t.Run("check_stats_1", func(t *testing.T) {
 			got := p.Stats()
 			want := Stats{
-				MaxOpen: 1,
+				Open:    true,
 				NumOpen: 1,
 				Idle:    1,
 			}

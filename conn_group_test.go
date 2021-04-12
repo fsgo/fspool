@@ -42,9 +42,11 @@ func TestNewConnPoolGroup(t *testing.T) {
 		})
 		t.Run("GroupStats", func(t *testing.T) {
 			got := pg.GroupStats().All
-			want := Stats{}
+			want := Stats{
+				Open: true,
+			}
 			if !reflect.DeepEqual(got, want) {
-				t.Fatalf("got=%v, want=%v", got, want)
+				t.Fatalf("\ngot =%v,\nwant=%v", got, want)
 			}
 		})
 
@@ -68,11 +70,12 @@ func TestNewConnPoolGroup(t *testing.T) {
 				{
 					got := pg.GroupStats().All
 					want := Stats{
+						Open:    true,
 						NumOpen: 1,
 						InUse:   1,
 					}
 					if !reflect.DeepEqual(got, want) {
-						t.Fatalf("got=%v, want=%v", got, want)
+						t.Fatalf("\ngot =%v,\nwant=%v", got, want)
 					}
 				}
 			})
@@ -85,10 +88,11 @@ func TestNewConnPoolGroup(t *testing.T) {
 				{
 					got := pg.GroupStats().All
 					want := Stats{
+						Open:          true,
 						MaxIdleClosed: 1,
 					}
 					if !reflect.DeepEqual(got, want) {
-						t.Fatalf("got=%v, want=%v", got, want)
+						t.Fatalf("\ngot =%v,\nwant=%v", got, want)
 					}
 				}
 			})

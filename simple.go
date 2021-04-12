@@ -140,6 +140,12 @@ func (p *simplePool) Option() Option {
 
 // Put put to pool
 func (p *simplePool) Put(el interface{}) error {
+	if el == nil {
+		p.mu.Lock()
+		p.numOpen--
+		p.mu.Unlock()
+		return nil
+	}
 	// if type invalid, then panic
 	p.putElement(el.(Element), nil)
 	return nil
@@ -234,8 +240,9 @@ func (p *simplePool) selectOne(ctx context.Context) (el Element, err error) {
 			if ret.err == nil && !ret.el.PEIsActive() {
 				p.mu.Lock()
 				p.maxLifetimeClosed++
+				p.numOpen--
 				p.mu.Unlock()
-				ret.el.Close()
+				ret.el.PERawClose()
 				return nil, ErrBadValue
 			}
 			if ret.el == nil {
@@ -289,10 +296,14 @@ func (p *simplePool) maybeOpenNewElements() {
 	}
 }
 
-// putElement adds a connection to the db's free simplePool.
+// putElement adds a connection to the  free simplePool.
 // err is optionally the last error that occurred on this element.
 func (p *simplePool) putElement(dc Element, err error) {
 	if p.option.MaxIdle < 1 {
+		if dc == nil {
+			return
+		}
+
 		dc.PERawClose()
 
 		p.mu.Lock()
@@ -411,6 +422,7 @@ func (p *simplePool) elementCleaner(d time.Duration) {
 		}
 
 		closing := p.elementCleanerRunLocked()
+		p.numOpen = p.numOpen - len(closing)
 		p.mu.Unlock()
 		for _, c := range closing {
 			c.PERawClose()
@@ -476,7 +488,8 @@ func (p *simplePool) Stats() Stats {
 	defer p.mu.Unlock()
 
 	stats := Stats{
-		MaxOpen: p.option.MaxOpen,
+		Open: !p.closed,
+
 		Idle:    len(p.idles),
 		NumOpen: p.numOpen,
 		InUse:   p.numOpen - len(p.idles),

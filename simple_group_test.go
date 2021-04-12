@@ -77,13 +77,14 @@ func TestNewSimpleGroup(t *testing.T) {
 				gs := pg.GroupStats()
 				got := gs.All
 				want := Stats{
+					Open:          true,
 					NumOpen:       0,
 					InUse:         0,
 					MaxIdleClosed: int64(i) + 1,
 				}
 
 				if !reflect.DeepEqual(got, want) {
-					t.Fatalf("got=%v want=%v", got, want)
+					t.Fatalf("\ngot =%v,\nwant=%v", got, want)
 				}
 			})
 
