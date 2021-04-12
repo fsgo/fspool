@@ -39,12 +39,19 @@ type ConnPoolGroup interface {
 	GroupStats() GroupStats
 	Close() error
 	Option() Option
+	Range(func(el net.Conn) error) error
 }
 
 var _ ConnPoolGroup = (*connGroup)(nil)
 
 type connGroup struct {
 	raw SimplePoolGroup
+}
+
+func (cg *connGroup) Range(fn func(el net.Conn) error) error {
+	return cg.raw.Range(func(el Element) error {
+		return fn(el.(net.Conn))
+	})
 }
 
 func (cg *connGroup) Option() Option {

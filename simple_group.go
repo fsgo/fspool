@@ -37,6 +37,7 @@ type SimplePoolGroup interface {
 	GroupStats() GroupStats
 	Close() error
 	Option() Option
+	Range(func(el Element) error) error
 }
 
 var _ SimplePoolGroup = (*simpleGroup)(nil)
@@ -49,6 +50,17 @@ type simpleGroup struct {
 	mu        sync.Mutex
 	done      context.CancelFunc
 	closed    bool
+}
+
+func (g *simpleGroup) Range(fn func(el Element) error) error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	for _, pool := range g.pools {
+		if err := pool.Range(fn); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (g *simpleGroup) Option() Option {

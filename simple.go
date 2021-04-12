@@ -65,8 +65,11 @@ type SimplePool interface {
 	Get(ctx context.Context) (el Element, err error)
 	Option() Option
 	Stats() Stats
+	Range(func(el Element) error) error
 	Close() error
 }
+
+var _ SimplePool = (*simplePool)(nil)
 
 // simplePool common pool from database.sql
 type simplePool struct {
@@ -546,5 +549,16 @@ func (p *simplePool) Close() error {
 		}
 	}
 	p.stop()
+	return err
+}
+
+func (p *simplePool) Range(fn func(el Element) error) (err error) {
+	p.mu.Lock()
+	for _, el := range p.idles {
+		if err = fn(el); err != nil {
+			break
+		}
+	}
+	p.mu.Unlock()
 	return err
 }

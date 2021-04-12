@@ -97,6 +97,20 @@ func TestNewConnPoolGroup(t *testing.T) {
 				}
 			})
 		})
+		t.Run("range", func(t *testing.T) {
+			var total int
+			err := pg.Range(func(el net.Conn) error {
+				total++
+				if el == nil {
+					t.Fatalf("el is nil")
+				}
+				return nil
+			})
+			if err != nil {
+				t.Fatalf(err.Error())
+			}
+		})
+
 		t.Run("close", func(t *testing.T) {
 			err := pg.Close()
 			if err != nil {

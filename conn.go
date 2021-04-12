@@ -40,8 +40,11 @@ type ConnPool interface {
 	Get(ctx context.Context) (net.Conn, error)
 	Option() Option
 	Stats() Stats
+	Range(func(net.Conn) error) error
 	Close() error
 }
+
+var _ ConnPool = (*connPool)(nil)
 
 // connPool 网络连接池
 type connPool struct {
@@ -65,6 +68,12 @@ func (cp *connPool) Put(value interface{}) error {
 	}
 	// if type invalid, then panic
 	return cp.raw.(NewElementNeed).Put(value.(*pConn))
+}
+
+func (cp *connPool) Range(fn func(net.Conn) error) error {
+	return cp.raw.Range(func(el Element) error {
+		return fn(el.(net.Conn))
+	})
 }
 
 // Close close pool
