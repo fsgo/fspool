@@ -17,24 +17,24 @@ import (
 )
 
 type testEL struct {
-	*WithTimeInfo
+	*MetaInfo
 	id   int32
 	p    NewElementNeed
 	name string
 }
 
 func (t *testEL) Name() string {
-	t.WithTimeInfo.MarkUsed()
+	t.MetaInfo.PEMarkUsing()
 	return t.name
 }
 
 func (t *testEL) ID() int32 {
-	t.WithTimeInfo.MarkUsed()
+	t.MetaInfo.PEMarkUsing()
 	return t.id
 }
 
 func (t *testEL) PEIsActive() bool {
-	return t.WithTimeInfo.IsActive(t.p.Option())
+	return t.MetaInfo.IsActive(t.p.Option())
 }
 
 func (t *testEL) Close() error {
@@ -59,7 +59,7 @@ func TestNewSimple(t *testing.T) {
 
 	newFunc := func(ctx context.Context, p NewElementNeed) (Element, error) {
 		v := atomic.AddInt32(&id, 1)
-		return &testEL{id: v, p: p, WithTimeInfo: NewWithTimeInfo()}, nil
+		return &testEL{id: v, p: p, MetaInfo: NewMetaInfo()}, nil
 	}
 
 	testForEach := func(t *testing.T, p SimplePool, getWant func(i int) int32) {

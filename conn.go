@@ -90,9 +90,9 @@ const (
 
 func newPConn(raw net.Conn, p NewElementNeed) *pConn {
 	return &pConn{
-		raw:          raw,
-		pool:         p,
-		WithTimeInfo: NewWithTimeInfo(),
+		raw:      raw,
+		pool:     p,
+		MetaInfo: NewMetaInfo(),
 	}
 }
 
@@ -100,7 +100,7 @@ var _ net.Conn = (*pConn)(nil)
 var _ Element = (*pConn)(nil)
 
 type pConn struct {
-	*WithTimeInfo
+	*MetaInfo
 
 	pool NewElementNeed
 
@@ -122,8 +122,6 @@ func (c *pConn) setErr(err error) {
 }
 
 func (c *pConn) Read(b []byte) (n int, err error) {
-	c.WithTimeInfo.MarkUsed()
-
 	c.withLock(func() {
 		c.readStat = statStart
 	})
@@ -136,8 +134,6 @@ func (c *pConn) Read(b []byte) (n int, err error) {
 }
 
 func (c *pConn) Write(b []byte) (n int, err error) {
-	c.WithTimeInfo.MarkUsed()
-
 	c.withLock(func() {
 		c.writeStat = statStart
 	})
@@ -215,7 +211,7 @@ func (c *pConn) PEIsActive() bool {
 
 	c.mu.RUnlock()
 
-	if !c.WithTimeInfo.IsActive(c.pool.Option()) {
+	if !c.MetaInfo.IsActive(c.pool.Option()) {
 		return false
 	}
 
@@ -225,4 +221,27 @@ func (c *pConn) PEIsActive() bool {
 		}
 	}
 	return true
+}
+
+// NewAddr  net net.Addr
+func NewAddr(network string, host string) net.Addr {
+	return &cAddr{
+		network: network,
+		host:    host,
+	}
+}
+
+var _ net.Addr = (*cAddr)(nil)
+
+type cAddr struct {
+	network string
+	host    string
+}
+
+func (c *cAddr) Network() string {
+	return c.network
+}
+
+func (c *cAddr) String() string {
+	return c.host
 }

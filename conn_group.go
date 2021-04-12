@@ -35,7 +35,7 @@ func NewConnPoolGroup(opt *Option, gn GroupNewConnFunc) ConnPoolGroup {
 
 // ConnPoolGroup 按照 key 分组的 连接池
 type ConnPoolGroup interface {
-	Get(ctx context.Context, key interface{}) (net.Conn, error)
+	Get(ctx context.Context, addr net.Addr) (net.Conn, error)
 	GroupStats() GroupStats
 	Close() error
 	Option() Option
@@ -51,8 +51,8 @@ func (cg *connGroup) Option() Option {
 	return cg.raw.Option()
 }
 
-func (cg *connGroup) Get(ctx context.Context, key interface{}) (net.Conn, error) {
-	el, err := cg.raw.Get(ctx, key)
+func (cg *connGroup) Get(ctx context.Context, addr net.Addr) (net.Conn, error) {
+	el, err := cg.raw.Get(ctx, addr)
 	if err != nil {
 		return nil, err
 	}

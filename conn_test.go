@@ -98,6 +98,9 @@ func TestNewConnPool(t *testing.T) {
 					t.Fatalf("cp.Get unexpect error %v", errGet)
 				}
 
+				// todo check it
+				_ = ReadMeta(conn)
+
 				t.Logf("cp.Get()=%s", conn.RemoteAddr())
 
 				sendContent := []byte(fmt.Sprintf("loop %d", i))

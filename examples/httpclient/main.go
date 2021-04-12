@@ -50,7 +50,7 @@ func doQuery(callURL string) {
 	ts := &http.Transport{
 		// DisableKeepAlives: true,
 		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-			conn, err := pg.Get(ctx, addr)
+			conn, err := pg.Get(ctx, fspool.NewAddr(network, addr))
 			log.Println(connInfo("Transport Pool.Get", addr, conn, err))
 			return conn, err
 		},

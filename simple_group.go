@@ -75,7 +75,7 @@ func (g *simpleGroup) getPool(key interface{}) *groupPoolItem {
 		p = newGroupPoolItem(pool)
 		g.pools[poolID] = p
 	}
-	p.MarkUsed()
+	p.PEMarkUsing()
 	return p
 }
 
@@ -173,14 +173,14 @@ func (g *simpleGroup) doCheckExpire() {
 }
 
 type groupPoolItem struct {
-	*WithTimeInfo
+	*MetaInfo
 	SimplePool
 }
 
 func newGroupPoolItem(p SimplePool) *groupPoolItem {
 	return &groupPoolItem{
-		WithTimeInfo: NewWithTimeInfo(),
-		SimplePool:   p,
+		MetaInfo:   NewMetaInfo(),
+		SimplePool: p,
 	}
 }
 

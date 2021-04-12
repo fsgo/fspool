@@ -26,10 +26,10 @@ func TestNewSimpleGroup(t *testing.T) {
 		return func(ctx context.Context, pool NewElementNeed) (Element, error) {
 			v := atomic.AddInt32(&id, 1)
 			item := &testEL{
-				id:           v,
-				p:            pool,
-				WithTimeInfo: NewWithTimeInfo(),
-				name:         fmt.Sprint(key),
+				id:       v,
+				p:        pool,
+				MetaInfo: NewMetaInfo(),
+				name:     fmt.Sprint(key),
 			}
 			return item, nil
 		}

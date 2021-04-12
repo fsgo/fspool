@@ -18,8 +18,16 @@ type Element interface {
 	// PEIsActive 判断元素是否有效
 	PEIsActive() bool
 
+	// PEMarkUsing 标记元素在使用
+	PEMarkUsing()
+
+	// PEMarkIdle 标记当前处于空闲状态
+	PEMarkIdle()
+
 	// PERawClose 元素最元素的 close
 	PERawClose() error
+
+	PEMeta() Meta
 
 	// Close 当前元素放回 pool 或者 销毁
 	Close() error
@@ -158,6 +166,9 @@ func (p *simplePool) Get(ctx context.Context) (el Element, err error) {
 		if err != ErrBadValue {
 			break
 		}
+	}
+	if el != nil {
+		el.PEMarkUsing()
 	}
 	return el, err
 }
@@ -299,6 +310,10 @@ func (p *simplePool) maybeOpenNewElements() {
 // putElement adds a connection to the  free simplePool.
 // err is optionally the last error that occurred on this element.
 func (p *simplePool) putElement(dc Element, err error) {
+	if dc != nil {
+		dc.PEMarkIdle()
+	}
+
 	if p.option.MaxIdle < 1 {
 		if dc == nil {
 			return
@@ -532,40 +547,4 @@ func (p *simplePool) Close() error {
 	}
 	p.stop()
 	return err
-}
-
-// NewWithTimeInfo 创建一个 *WithTimeInfo
-func NewWithTimeInfo() *WithTimeInfo {
-	return &WithTimeInfo{
-		createTime: time.Now(),
-	}
-}
-
-// WithTimeInfo 包含 创建时间和使用时间
-type WithTimeInfo struct {
-	createTime  time.Time
-	lastUseTime time.Time
-	mu          sync.Mutex
-}
-
-// MarkUsed 标记已使用
-func (w *WithTimeInfo) MarkUsed() {
-	w.mu.Lock()
-	w.lastUseTime = time.Now()
-	w.mu.Unlock()
-}
-
-// IsActive 是否在有效期内
-func (w *WithTimeInfo) IsActive(opt Option) bool {
-	w.mu.Lock()
-	lastUse := w.lastUseTime
-	w.mu.Unlock()
-
-	if opt.MaxIdleTime > 0 && time.Since(lastUse) >= opt.MaxIdleTime {
-		return false
-	}
-	if opt.MaxLifeTime > 0 && time.Since(w.createTime) >= opt.MaxLifeTime {
-		return false
-	}
-	return true
 }
