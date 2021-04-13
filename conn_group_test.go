@@ -34,8 +34,7 @@ func TestNewConnPoolGroup(t *testing.T) {
 	}()
 
 	t.Run("case 1", func(t *testing.T) {
-		pg := NewConnPoolGroup(nil, func(key interface{}) NewConnFunc {
-			addr := key.(net.Addr)
+		pg := NewConnPoolGroup(nil, func(addr net.Addr) NewConnFunc {
 			return func(ctx context.Context) (net.Conn, error) {
 				return net.DialTimeout(addr.Network(), addr.String(), time.Second)
 			}

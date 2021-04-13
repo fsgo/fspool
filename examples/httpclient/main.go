@@ -78,11 +78,10 @@ func init() {
 		MaxIdleTime: 30 * time.Second,
 	}
 
-	pg = fspool.NewConnPoolGroup(opt, func(key interface{}) fspool.NewConnFunc {
-		addr := key.(string)
+	pg = fspool.NewConnPoolGroup(opt, func(addr net.Addr) fspool.NewConnFunc {
 		return func(ctx context.Context) (net.Conn, error) {
-			conn, err := net.DialTimeout("tcp", addr, time.Second)
-			log.Println(connInfo("PoolGroup net.Dial", addr, conn, err))
+			conn, err := net.DialTimeout("tcp", addr.String(), time.Second)
+			log.Println(connInfo("PoolGroup net.Dial", addr.String(), conn, err))
 			return conn, err
 		}
 	})

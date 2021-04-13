@@ -12,12 +12,12 @@ import (
 )
 
 // GroupNewConnFunc 给 Group 创建新的 pool
-type GroupNewConnFunc func(key interface{}) NewConnFunc
+type GroupNewConnFunc func(addr net.Addr) NewConnFunc
 
 func (gn GroupNewConnFunc) trans() GroupNewElementFunc {
 	return func(key interface{}) NewElementFunc {
 		return func(ctx context.Context, pool NewElementNeed) (Element, error) {
-			conn, err := gn(key)(ctx)
+			conn, err := gn(key.(net.Addr))(ctx)
 			if err != nil {
 				return nil, err
 			}
