@@ -83,7 +83,7 @@ func (g *simpleGroup) getPool(key interface{}) *groupPoolItem {
 	p, has := g.pools[poolID]
 	if !has {
 		fn := g.genNewEle(key)
-		pool := NewSimple(&g.option, fn)
+		pool := NewSimplePool(&g.option, fn)
 		p = newGroupPoolItem(pool)
 		g.pools[poolID] = p
 	}

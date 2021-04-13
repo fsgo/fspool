@@ -39,6 +39,12 @@ func TestNewConnPoolGroup(t *testing.T) {
 				return net.DialTimeout(addr.Network(), addr.String(), time.Second)
 			}
 		})
+		t.Run("option", func(t *testing.T) {
+			op := pg.Option()
+			if op.MaxOpen != 0 {
+				t.Fatalf("op.MaxOpen==%d want 0", op.MaxOpen)
+			}
+		})
 		t.Run("GroupStats", func(t *testing.T) {
 			got := pg.GroupStats().All
 			want := Stats{

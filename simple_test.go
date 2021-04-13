@@ -110,7 +110,7 @@ func TestNewSimple(t *testing.T) {
 	}
 
 	t.Run("case 1-default values", func(t *testing.T) {
-		p := NewSimple(nil, newFunc)
+		p := NewSimplePool(nil, newFunc)
 
 		testForEach(t, p, func(i int) int32 {
 			return int32(i)
@@ -125,7 +125,7 @@ func TestNewSimple(t *testing.T) {
 		opt := &Option{
 			MaxIdle: 1,
 		}
-		p := NewSimple(opt, newFunc)
+		p := NewSimplePool(opt, newFunc)
 
 		testForEach(t, p, func(i int) int32 {
 			return 1
@@ -137,7 +137,7 @@ func TestNewSimple(t *testing.T) {
 			MaxIdle: 1,
 			MaxOpen: 1,
 		}
-		p := NewSimple(opt, newFunc)
+		p := NewSimplePool(opt, newFunc)
 
 		testForEach(t, p, func(i int) int32 {
 			return 1
@@ -212,9 +212,25 @@ func testSimplePoolClose(t *testing.T, p SimplePool) {
 }
 
 func TestSimplePool_Close(t *testing.T) {
-	p := NewSimple(nil, func(ctx context.Context, pool NewElementNeed) (Element, error) {
-		return &testEL{id: 100, p: pool}, nil
+	p := NewSimplePool(nil, func(ctx context.Context, pool NewElementNeed) (Element, error) {
+		return &testEL{id: 100, p: pool, MetaInfo: NewMetaInfo()}, nil
 	})
+
+	item, err := p.Get(context.Background())
+	if err != nil {
+		t.Fatalf(err.Error())
+	}
+	item.Close()
+
+	err = p.Range(func(el Element) error {
+		m := ReadMeta(el)
+		t.Logf("meta=%s", m.String())
+		return nil
+	})
+	if err != nil {
+		t.Fatalf(err.Error())
+	}
+
 	for i := 0; i < 2; i++ {
 		testSimplePoolClose(t, p)
 	}

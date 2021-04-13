@@ -41,8 +41,8 @@ type PEIsActiver interface {
 // NewElementFunc new element func
 type NewElementFunc func(context.Context, NewElementNeed) (Element, error)
 
-// NewSimple new pool
-func NewSimple(option *Option, newFunc NewElementFunc) SimplePool {
+// NewSimplePool new pool
+func NewSimplePool(option *Option, newFunc NewElementFunc) SimplePool {
 	if option == nil {
 		option = &Option{}
 	}
@@ -199,6 +199,7 @@ func (p *simplePool) selectOne(ctx context.Context) (el Element, err error) {
 		p.idles = p.idles[:numFree-1]
 		if !el.PEIsActive() {
 			p.maxLifetimeClosed++
+			p.numOpen--
 			p.mu.Unlock()
 			el.PERawClose()
 			return nil, ErrBadValue
@@ -335,6 +336,7 @@ func (p *simplePool) putElement(dc Element, err error) {
 
 	if err != ErrBadValue && !dc.PEIsActive() {
 		p.maxLifetimeClosed++
+		p.numOpen--
 		err = ErrBadValue
 	}
 
@@ -349,6 +351,9 @@ func (p *simplePool) putElement(dc Element, err error) {
 		return
 	}
 	added := p.putElementPoolLocked(dc, nil)
+	if !added {
+		p.numOpen--
+	}
 	p.mu.Unlock()
 
 	if !added {
@@ -524,7 +529,7 @@ func (p *simplePool) Stats() Stats {
 // Close close the pool
 func (p *simplePool) Close() error {
 	p.mu.Lock()
-	if p.closed { // Make DB.Close idempotent
+	if p.closed {
 		p.mu.Unlock()
 		return nil
 	}

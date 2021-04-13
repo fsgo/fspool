@@ -31,7 +31,7 @@ func (nf NewConnFunc) Trans(p *connPool) NewElementFunc {
 // NewConnPool 创建新的 net.Conn 的连接池
 func NewConnPool(option *Option, newFunc NewConnFunc) ConnPool {
 	p := &connPool{}
-	p.raw = NewSimple(option, newFunc.Trans(p))
+	p.raw = NewSimplePool(option, newFunc.Trans(p))
 	return p
 }
 
@@ -230,27 +230,4 @@ func (c *pConn) PEIsActive() bool {
 		}
 	}
 	return true
-}
-
-// NewAddr  net net.Addr
-func NewAddr(network string, host string) net.Addr {
-	return &cAddr{
-		network: network,
-		host:    host,
-	}
-}
-
-var _ net.Addr = (*cAddr)(nil)
-
-type cAddr struct {
-	network string
-	host    string
-}
-
-func (c *cAddr) Network() string {
-	return c.network
-}
-
-func (c *cAddr) String() string {
-	return c.host
 }
