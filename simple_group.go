@@ -170,7 +170,7 @@ func (g *simpleGroup) doCheckExpire() {
 	}
 	var expires []interface{}
 	for k, p := range g.pools {
-		if !p.IsActive(g.option) {
+		if p.Active(g.option) != nil {
 			expires = append(expires, k)
 			p.Close()
 		}

@@ -58,16 +58,11 @@ func (cp *connPool) Get(ctx context.Context) (el net.Conn, err error) {
 		return nil, err
 	}
 	return value.(net.Conn), nil
-
 }
 
 // Put put to pool
 func (cp *connPool) Put(value interface{}) error {
-	if value == nil {
-		return cp.raw.(NewElementNeed).Put(nil)
-	}
-	// if type invalid, then panic
-	return cp.raw.(NewElementNeed).Put(value.(*pConn))
+	return cp.raw.(NewElementNeed).Put(value)
 }
 
 func (cp *connPool) Range(fn func(net.Conn) error) error {
@@ -154,16 +149,15 @@ func (c *pConn) Write(b []byte) (n int, err error) {
 	return n, err
 }
 
+func (c *pConn) PEReset() {
+	c.withLock(func() {
+		c.readStat = statInit
+		c.writeStat = statInit
+	})
+}
+
 func (c *pConn) Close() error {
-	if c.PEIsActive() {
-		c.withLock(func() {
-			c.readStat = statInit
-			c.writeStat = statInit
-		})
-		return c.pool.Put(c)
-	}
-	_ = c.pool.Put(nil) // for numOpen--
-	return c.PERawClose()
+	return c.pool.Put(c)
 }
 
 func (c *pConn) LocalAddr() net.Addr {
@@ -210,24 +204,24 @@ func (c *pConn) PERawClose() error {
 	return c.raw.Close()
 }
 
-func (c *pConn) PEIsActive() bool {
+func (c *pConn) PEActive() error {
 	c.mu.RLock()
 
 	if c.lastErr != nil || c.isDoing() {
 		c.mu.RUnlock()
-		return false
+		return ErrBadValue
 	}
 
 	c.mu.RUnlock()
 
-	if !c.MetaInfo.IsActive(c.pool.Option()) {
-		return false
+	if ea := c.MetaInfo.Active(c.pool.Option()); ea != nil {
+		return ea
 	}
 
-	if ra, ok := c.raw.(PEIsActiver); ok {
-		if !ra.PEIsActive() {
-			return false
+	if ra, ok := c.raw.(PEActiver); ok {
+		if ea := ra.PEActive(); ea != nil {
+			return ea
 		}
 	}
-	return true
+	return nil
 }

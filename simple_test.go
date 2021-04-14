@@ -18,30 +18,47 @@ import (
 
 type testEL struct {
 	*MetaInfo
-	id   int32
-	p    NewElementNeed
-	name string
+	id      int32
+	p       NewElementNeed
+	val     int64
+	name    string
+	mu      sync.Mutex
+	lastErr error
 }
 
 func (t *testEL) Name() string {
-	t.MetaInfo.PEMarkUsing()
 	return t.name
 }
 
 func (t *testEL) ID() int32 {
-	t.MetaInfo.PEMarkUsing()
 	return t.id
 }
 
-func (t *testEL) PEIsActive() bool {
-	return t.MetaInfo.IsActive(t.p.Option())
+var testModNum = 99
+
+func (t *testEL) NextValue() int64 {
+	val := atomic.AddInt64(&t.val, 1)
+	if val%int64(testModNum) == int64(testModNum-1) {
+		t.mu.Lock()
+		t.lastErr = fmt.Errorf("val=99 must error")
+		t.mu.Unlock()
+	}
+	return val
+}
+
+func (t *testEL) PEActive() error {
+	t.mu.Lock()
+	err := t.lastErr
+	t.mu.Unlock()
+
+	if err != nil {
+		return err
+	}
+	return t.MetaInfo.Active(t.p.Option())
 }
 
 func (t *testEL) Close() error {
-	if t.PEIsActive() {
-		return t.p.Put(t)
-	}
-	return t.PERawClose()
+	return t.p.Put(t)
 }
 
 func (t *testEL) PERawClose() error {
@@ -64,20 +81,22 @@ func TestNewSimple(t *testing.T) {
 
 	testForEach := func(t *testing.T, p SimplePool, getWant func(i int) int32) {
 		defer resetID()
-
 		t.Run("foreach", func(t *testing.T) {
-			for i := 1; i < 100; i++ {
-				val, err := p.Get(context.Background())
-				if err != nil {
-					t.Fatalf("has error: %v", err)
-				}
-				v := val.(*testEL)
-				got := v.ID()
-				want := getWant(i)
-				val.Close()
-				if got != want {
-					t.Fatalf("got=%v want=%v", got, want)
-				}
+			for i := 1; i < 1000; i++ {
+				t.Run(fmt.Sprintf("for_%d", i), func(t *testing.T) {
+					val, err := p.Get(context.Background())
+					if err != nil {
+						t.Fatalf("has error: %v", err)
+					}
+					defer val.Close()
+
+					v := val.(*testEL)
+					got := v.ID()
+					want := getWant(i)
+					if got != want {
+						t.Fatalf("got=%v want=%v", got, want)
+					}
+				})
 			}
 		})
 	}
@@ -193,6 +212,65 @@ func TestNewSimple(t *testing.T) {
 			})
 
 		})
+	})
+
+	t.Run("case 4-Parallel", func(t *testing.T) {
+		resetID()
+		defer resetID()
+		opt := &Option{
+			MaxOpen: 3,
+			MaxIdle: 3,
+		}
+		p := NewSimplePool(opt, newFunc)
+
+		var wg sync.WaitGroup
+
+		var getErrTotal int32
+
+		imax := 200
+		zmax := 1000
+		mmax := 10
+
+		wantN := imax * zmax * mmax / (testModNum + 1)
+
+		var mu sync.Mutex
+		var idMax int32
+
+		for i := 0; i < imax; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for z := 0; z < zmax; z++ {
+					item, err := p.Get(context.Background())
+					if err != nil {
+						atomic.AddInt32(&getErrTotal, 1)
+						continue
+					}
+					val := item.(*testEL)
+
+					mu.Lock()
+					id := val.ID()
+					if id > idMax {
+						idMax = id
+					}
+					mu.Unlock()
+
+					for m := 0; m < mmax; m++ {
+						val.NextValue()
+					}
+					item.Close()
+				}
+			}()
+		}
+		wg.Wait()
+
+		if getErrTotal > 0 {
+			t.Fatalf("getErrTotal=%d want 0", getErrTotal)
+		}
+
+		if int(idMax) != wantN {
+			t.Fatalf("idMax=%d want = %d", idMax, wantN)
+		}
 	})
 }
 

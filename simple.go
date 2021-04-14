@@ -15,8 +15,8 @@ import (
 
 // Element pool element
 type Element interface {
-	// PEIsActive 判断元素是否有效
-	PEIsActive() bool
+	// PEActive 判断元素是否有效
+	PEActive() error
 
 	// PEMarkUsing 标记元素在使用
 	PEMarkUsing()
@@ -33,9 +33,14 @@ type Element interface {
 	Close() error
 }
 
-// PEIsActiver 是否有效
-type PEIsActiver interface {
-	PEIsActive() bool
+// PEActiver 是否有效
+type PEActiver interface {
+	PEActive() error
+}
+
+// PEReseter reset it
+type PEReseter interface {
+	PEReset()
 }
 
 // NewElementFunc new element func
@@ -47,16 +52,12 @@ func NewSimplePool(option *Option, newFunc NewElementFunc) SimplePool {
 		option = &Option{}
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-
 	p := &simplePool{
 		option:          *option,
 		newFunc:         newFunc,
 		idles:           make([]Element, 0, option.MaxIdle),
 		elementRequests: make(map[uint64]chan elementRequest),
-		stop:            cancel,
 	}
-	go p.elementOpener(ctx)
 	return p
 }
 
@@ -81,7 +82,6 @@ type simplePool struct {
 
 	numOpen int // 已打开的
 
-	openerCh    chan struct{}
 	nextRequest uint64 // Next key to use in elementRequests.
 
 	elementRequests map[uint64]chan elementRequest
@@ -99,67 +99,11 @@ type simplePool struct {
 	maxIdleClosed     int64 // Total number of elements closed due to idle count.
 	maxIdleTimeClosed int64 // Total number of elements closed due to idle time.
 	maxLifetimeClosed int64 // Total number of elements closed due to max element lifetime
-
-	stop func() // stop cancels the element opener.
-}
-
-// Runs in a separate goroutine, opens new element when requested.
-func (p *simplePool) elementOpener(ctx context.Context) {
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-p.openerCh:
-			p.openNewElement(ctx)
-		}
-	}
-}
-
-// Open one new element
-func (p *simplePool) openNewElement(ctx context.Context) {
-	// openNewElement has already executed pool.numOpen++ before it sent
-	// on pool.openerCh. This function must execute pool.numOpen-- if the
-	// element fails or is closed before returning.
-	ci, err := p.newElement(ctx)
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if p.closed {
-		if err == nil {
-			ci.PERawClose()
-		}
-		p.numOpen--
-		return
-	}
-	if err != nil {
-		p.numOpen--
-		// 创建新元素失败了，也要将错误信息发生回去，这样调用方可以知道为何失败了
-		p.putElementPoolLocked(nil, err)
-		p.maybeOpenNewElements()
-		return
-	}
-
-	if !p.putElementPoolLocked(ci, err) {
-		p.numOpen--
-		ci.PERawClose()
-	}
 }
 
 // Option get pool option
 func (p *simplePool) Option() Option {
 	return p.option
-}
-
-// Put put to pool
-func (p *simplePool) Put(el interface{}) error {
-	if el == nil {
-		p.mu.Lock()
-		p.numOpen--
-		p.mu.Unlock()
-		return nil
-	}
-	// if type invalid, then panic
-	p.putElement(el.(Element), nil)
-	return nil
 }
 
 // Get get one from pool; from idle or create new
@@ -174,6 +118,19 @@ func (p *simplePool) Get(ctx context.Context) (el Element, err error) {
 		el.PEMarkUsing()
 	}
 	return el, err
+}
+
+func (p *simplePool) countClosed(err error) {
+	switch err {
+	case ErrOutOfMaxLife:
+		p.maxIdleTimeClosed++
+	case ErrOutOfMaxIdle:
+		p.maxIdleClosed++
+	case ErrOutOfMaxIdleTime:
+		p.maxIdleTimeClosed++
+	default:
+	}
+	p.numOpen--
 }
 
 // selectOne 获取一个缓存的或者新创建一个
@@ -192,14 +149,14 @@ func (p *simplePool) selectOne(ctx context.Context) (el Element, err error) {
 		return nil, ctx.Err()
 	}
 
+	// try get from idle
 	numFree := len(p.idles)
 	if numFree > 0 {
 		el = p.idles[0]
 		copy(p.idles, p.idles[1:])
 		p.idles = p.idles[:numFree-1]
-		if !el.PEIsActive() {
-			p.maxLifetimeClosed++
-			p.numOpen--
+		if ea := el.PEActive(); ea != nil {
+			p.countClosed(ea)
 			p.mu.Unlock()
 			el.PERawClose()
 			return nil, ErrBadValue
@@ -246,26 +203,21 @@ func (p *simplePool) selectOne(ctx context.Context) (el Element, err error) {
 			if !ok {
 				return nil, ErrClosed
 			}
-			// Only check if the element is expired if the strategy is cachedOrNewConns.
-			// If we require a new element, just re-use the element without looking
-			// at the expiry time. If it is expired, it will be checked when it is placed
-			// back into the element simplePool.
-			// This prioritizes giving a valid element to a client over the exact element
-			// lifetime, which could expire exactly after this point anyway.
-			if ret.err == nil && !ret.el.PEIsActive() {
-				p.mu.Lock()
-				p.maxLifetimeClosed++
-				p.numOpen--
-				p.mu.Unlock()
-				ret.el.PERawClose()
-				return nil, ErrBadValue
-			}
-			if ret.el == nil {
-				return nil, ret.err
+			if ret.err == nil {
+				if ea := ret.el.PEActive(); ea != nil {
+					p.mu.Lock()
+					p.countClosed(ea)
+					p.mu.Unlock()
+					ret.el.PERawClose()
+					return nil, ErrBadValue
+				}
 			}
 			return ret.el, ret.err
 		}
 	}
+
+	// other case
+	// p.option.MaxOpen==0 no limit maxOpen
 
 	p.numOpen++ // optimistically
 	p.mu.Unlock()
@@ -275,11 +227,10 @@ func (p *simplePool) selectOne(ctx context.Context) (el Element, err error) {
 	if err != nil {
 		p.mu.Lock()
 		p.numOpen-- // correct for earlier optimism
-		p.maybeOpenNewElements()
 		p.mu.Unlock()
 		return nil, err
 	}
-	return el, err
+	return el, nil
 }
 
 // nextRequestKeyLocked returns the next connection request key.
@@ -290,69 +241,62 @@ func (p *simplePool) nextRequestKeyLocked() uint64 {
 	return next
 }
 
-// Assumes pool.mu is locked.
-// If there are elementRequests and the connection limit hasn't been reached,
-// then tell the elementOpener to open new elements.
-func (p *simplePool) maybeOpenNewElements() {
-	numRequests := len(p.elementRequests)
-	if p.option.MaxOpen > 0 {
-		numCanOpen := p.option.MaxOpen - p.numOpen
-		if numRequests > numCanOpen {
-			numRequests = numCanOpen
-		}
+// Put put to pool
+func (p *simplePool) Put(el interface{}) error {
+	if el == nil {
+		p.putElement(nil, ErrBadValue)
 	}
-	for numRequests > 0 {
-		p.numOpen++ // optimistically
-		numRequests--
-		if p.closed {
-			return
-		}
-		p.openerCh <- struct{}{}
-	}
+	// if type invalid, then panic
+	p.putElement(el.(Element), nil)
+	return nil
 }
 
 // putElement adds a connection to the  free simplePool.
 // err is optionally the last error that occurred on this element.
 func (p *simplePool) putElement(dc Element, err error) {
-	if dc != nil {
-		dc.PEMarkIdle()
-	}
-
-	if p.option.MaxIdle < 1 {
-		if dc == nil {
-			return
-		}
-
-		dc.PERawClose()
-
+	if dc == nil {
 		p.mu.Lock()
-		p.maxIdleClosed++
-		p.numOpen--
+		p.countClosed(err)
 		p.mu.Unlock()
-
 		return
 	}
-	p.mu.Lock()
 
-	if err != ErrBadValue && !dc.PEIsActive() {
-		p.maxLifetimeClosed++
-		p.numOpen--
-		err = ErrBadValue
+	if item, ok := dc.(PEReseter); ok {
+		item.PEReset()
 	}
 
-	if err == ErrBadValue {
-		// Don't reuse bad Element.
-		// Since the pConn is considered bad and is being discarded, treat it
-		// as closed. Don't decrement the open count here, finalClose will
-		// take care of that.
-		p.maybeOpenNewElements()
-		p.mu.Unlock()
+	dc.PEMarkIdle()
+
+	if err != nil {
 		dc.PERawClose()
+		p.mu.Lock()
+		p.countClosed(err)
+		p.mu.Unlock()
 		return
 	}
-	added := p.putElementPoolLocked(dc, nil)
+
+	// p.option.MaxIdle < 1
+	// means not allow idle element
+	if p.option.MaxIdle < 1 {
+		dc.PERawClose()
+		p.mu.Lock()
+		p.countClosed(ErrOutOfMaxIdle)
+		p.mu.Unlock()
+		return
+	}
+
+	if ea := dc.PEActive(); ea != nil {
+		dc.PERawClose()
+		p.mu.Lock()
+		p.countClosed(ea)
+		p.mu.Unlock()
+		return
+	}
+
+	p.mu.Lock()
+	added := p.putElementIdleLocked(dc)
 	if !added {
-		p.numOpen--
+		p.countClosed(ErrOutOfMaxIdle)
 	}
 	p.mu.Unlock()
 
@@ -372,22 +316,19 @@ func (p *simplePool) newElement(ctx context.Context) (el Element, err error) {
 	return el, err
 }
 
-// Satisfy a connRequest or put the driverConn in the idle simplePool and return true
-// or return false.
-// putElementPoolLocked will satisfy a connRequest if there is one, or it will
-// return the Element to the freeConn list if err == nil and the idle
-// element limit will not be exceeded.
-// If err != nil, the value of dc is ignored.
-// If err == nil, then dc must not equal nil.
-// If a elementRequest was fulfilled or the Element was placed in the
-// idles list, then true is returned, otherwise false is returned.
-func (p *simplePool) putElementPoolLocked(dc Element, err error) bool {
+func (p *simplePool) putElementIdleLocked(dc Element) bool {
+	if dc == nil {
+		panic("putElementIdleLocked with nil value")
+	}
+
 	if p.closed {
 		return false
 	}
+
 	if p.option.MaxOpen > 0 && p.numOpen > p.option.MaxOpen {
 		return false
 	}
+
 	if c := len(p.elementRequests); c > 0 {
 		var req chan elementRequest
 		var reqKey uint64
@@ -398,16 +339,15 @@ func (p *simplePool) putElementPoolLocked(dc Element, err error) bool {
 
 		req <- elementRequest{
 			el:  dc,
-			err: err,
+			err: nil,
 		}
 		return true
-	} else if err == nil && !p.closed {
+	} else if !p.closed {
 		if p.maxIdleElementsLocked() > len(p.idles) {
 			p.idles = append(p.idles, dc)
 			p.startCleanerLocked()
 			return true
 		}
-		p.maxIdleClosed++
 	}
 	return false
 }
@@ -432,7 +372,7 @@ func (p *simplePool) elementCleaner(d time.Duration) {
 	for {
 		select {
 		case <-t.C:
-		case <-p.cleanerCh: // MaxLifeTime was changed or db was closed.
+		case <-p.cleanerCh:
 		}
 
 		p.mu.Lock()
@@ -445,7 +385,6 @@ func (p *simplePool) elementCleaner(d time.Duration) {
 		}
 
 		closing := p.elementCleanerRunLocked()
-		p.numOpen = p.numOpen - len(closing)
 		p.mu.Unlock()
 		for _, c := range closing {
 			c.PERawClose()
@@ -459,28 +398,13 @@ func (p *simplePool) elementCleaner(d time.Duration) {
 }
 
 func (p *simplePool) elementCleanerRunLocked() (closing []Element) {
-	if p.option.MaxLifeTime > 0 {
+	if p.option.MaxLifeTime > 0 || p.option.MaxIdleTime > 0 {
 		for i := 0; i < len(p.idles); i++ {
 			c := p.idles[i]
-			if !c.PEIsActive() {
-				closing = append(closing, c)
-				last := len(p.idles) - 1
-				p.idles[i] = p.idles[last]
-				p.idles[last] = nil
-				p.idles = p.idles[:last]
-				i--
-			}
-		}
-		p.maxLifetimeClosed += int64(len(closing))
-	}
+			if ea := c.PEActive(); ea != nil {
+				p.countClosed(ea)
 
-	if p.option.MaxIdleTime > 0 {
-		var expiredCount int64
-		for i := 0; i < len(p.idles); i++ {
-			c := p.idles[i]
-			if !c.PEIsActive() {
 				closing = append(closing, c)
-				expiredCount++
 				last := len(p.idles) - 1
 				p.idles[i] = p.idles[last]
 				p.idles[last] = nil
@@ -488,9 +412,8 @@ func (p *simplePool) elementCleanerRunLocked() (closing []Element) {
 				i--
 			}
 		}
-		p.maxIdleTimeClosed += expiredCount
 	}
-	return
+	return closing
 }
 
 func (p *simplePool) maxIdleElementsLocked() int {
@@ -553,7 +476,6 @@ func (p *simplePool) Close() error {
 			err = err1
 		}
 	}
-	p.stop()
 	return err
 }
 

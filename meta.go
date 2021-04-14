@@ -48,19 +48,19 @@ func (w *MetaInfo) PEMarkIdle() {
 	w.mu.Unlock()
 }
 
-// IsActive 是否在有效期内
-func (w *MetaInfo) IsActive(opt Option) bool {
+// Active 是否在有效期内
+func (w *MetaInfo) Active(opt Option) error {
 	w.mu.Lock()
 	lastUse := w.meta.LastUseTime
 	w.mu.Unlock()
 
 	if opt.MaxIdleTime > 0 && time.Since(lastUse) >= opt.MaxIdleTime {
-		return false
+		return ErrOutOfMaxIdleTime
 	}
 	if opt.MaxLifeTime > 0 && time.Since(w.meta.CreateTime) >= opt.MaxLifeTime {
-		return false
+		return ErrOutOfMaxLife
 	}
-	return true
+	return nil
 }
 
 // PEMeta 获取 meta 信息

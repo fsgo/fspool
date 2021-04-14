@@ -16,6 +16,15 @@ import (
 // ErrBadValue not active element
 var ErrBadValue = errors.New("bad pool value")
 
+// ErrOutOfMaxLife out of max life
+var ErrOutOfMaxLife = errors.New("out of max life")
+
+// ErrOutOfMaxIdle out of max idle
+var ErrOutOfMaxIdle = errors.New("out of max idle")
+
+// ErrOutOfMaxIdleTime out of max idle time
+var ErrOutOfMaxIdleTime = errors.New("out of max idle time")
+
 // nowFunc returns the current time; it's overridden in tests.
 var nowFunc = time.Now
 
