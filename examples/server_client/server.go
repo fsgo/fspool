@@ -45,7 +45,6 @@ func startServer(l net.Listener) {
 }
 
 var connTotal int64
-
 var connID int64
 
 func serverHandler(conn net.Conn) {

@@ -15,6 +15,7 @@ import (
 	"log"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/fsgo/fspool"
@@ -25,7 +26,8 @@ var p fspool.ConnPool
 var serverAddr = flag.String("addr", "127.0.0.1:8019", "server addr")
 var optMaxOpen = flag.Int("max_open", 10, "MaxOpen")
 var optMaxIdle = flag.Int("max_idle", 10, "MaxIdle")
-var optMaxLifeTime = flag.Int("max_life_time", 10, "MaxLifeTime ms")
+var optMaxLifeTime = flag.Int("max_life_time", 60, "MaxLifeTime s")
+var optMaxIdleTime = flag.Int("max_idle_time", 60, "MaxIdleTime s")
 var workerTotal = flag.Int("worker", 10, "client worker total")
 
 var workerStatus = map[int]time.Time{}
@@ -48,9 +50,11 @@ func initPool() {
 	opt := &fspool.Option{
 		MaxOpen:     *optMaxOpen,
 		MaxIdle:     *optMaxIdle,
-		MaxLifeTime: time.Duration(*optMaxLifeTime) * time.Millisecond,
-		MaxIdleTime: time.Duration(*optMaxLifeTime) * time.Millisecond,
+		MaxLifeTime: time.Duration(*optMaxLifeTime) * time.Second,
+		MaxIdleTime: time.Duration(*optMaxIdleTime) * time.Second,
 	}
+
+	var totalConn int64
 
 	p = fspool.NewConnPool(opt, func(ctx context.Context) (net.Conn, error) {
 		if _, ok := ctx.Deadline(); !ok {
@@ -58,8 +62,19 @@ func initPool() {
 			ctx, cancel = context.WithTimeout(ctx, time.Second)
 			defer cancel()
 		}
+		atomic.AddInt64(&totalConn, 1)
 		return (&net.Dialer{}).DialContext(ctx, "tcp", *serverAddr)
 	})
+
+	go func() {
+		for range time.NewTicker(time.Minute).C {
+			st := p.Stats()
+			log.Println(
+				"pool.Stats=", st,
+				"totalConn=", atomic.LoadInt64(&totalConn),
+			)
+		}
+	}()
 }
 
 func worker(id int) {
