@@ -123,7 +123,7 @@ func (p *simplePool) Get(ctx context.Context) (el Element, err error) {
 func (p *simplePool) countClosed(err error) {
 	switch err {
 	case ErrOutOfMaxLife:
-		p.maxIdleTimeClosed++
+		p.maxLifetimeClosed++
 	case ErrOutOfMaxIdle:
 		p.maxIdleClosed++
 	case ErrOutOfMaxIdleTime:
