@@ -43,6 +43,11 @@ type PEReseter interface {
 	PEReset()
 }
 
+// PEBindPool bind element to pool
+type PEBindPool interface {
+	BindPool(p NewElementNeed)
+}
+
 // NewElementFunc new element func
 type NewElementFunc func(context.Context, NewElementNeed) (Element, error)
 
@@ -74,6 +79,8 @@ var _ SimplePool = (*simplePool)(nil)
 
 // simplePool common pool from database.sql
 type simplePool struct {
+	nextID uint64
+
 	option Option
 
 	newFunc NewElementFunc
@@ -90,6 +97,8 @@ type simplePool struct {
 	closed bool
 
 	cleanerCh chan struct{}
+
+	onNewElement func(el Element)
 
 	// Atomic access only. At top of struct to prevent mis-alignment
 	// on 32-bit platforms. Of type time.Duration.
@@ -313,7 +322,29 @@ type elementRequest struct {
 
 func (p *simplePool) newElement(ctx context.Context) (el Element, err error) {
 	el, err = p.newFunc(ctx, p)
+	if el != nil {
+		if b, ok := el.(PEBindPool); ok {
+			b.BindPool(p)
+		}
+
+		trySetNextID(el, &p.nextID)
+
+		if p.onNewElement != nil {
+			p.onNewElement(el)
+		}
+	}
 	return el, err
+}
+
+func trySetNextID(el Element, nextID *uint64) {
+	if ps, ok := el.(interface{ PESetID(id uint64) }); ok {
+		id := atomic.AddUint64(nextID, 1)
+		ps.PESetID(id)
+	}
+}
+
+func (p *simplePool) OnNewElement(fn func(el Element)) {
+	p.onNewElement = fn
 }
 
 func (p *simplePool) putElementIdleLocked(dc Element) bool {
@@ -488,4 +519,61 @@ func (p *simplePool) Range(fn func(el Element) error) (err error) {
 	}
 	p.mu.Unlock()
 	return err
+}
+
+// SimpleRawItem 原始的数据
+type SimpleRawItem struct {
+	Raw         interface{}
+	CheckActive func() error
+	Close       func() error
+}
+
+// SimpleElement SimplePool 直接使用时的原始类型定义
+type SimpleElement interface {
+	Close() error
+	Raw() interface{}
+}
+
+// NewSimpleElement 创建一个新的通用类型的元素
+func NewSimpleElement(item *SimpleRawItem) Element {
+	return &elementTPL{
+		MetaInfo: NewMetaInfo(),
+		item:     item,
+	}
+}
+
+var _ SimpleElement = (*elementTPL)(nil)
+var _ Element = (*elementTPL)(nil)
+var _ PEBindPool = (*elementTPL)(nil)
+
+type elementTPL struct {
+	*MetaInfo
+	item *SimpleRawItem
+	pool NewElementNeed
+}
+
+func (e *elementTPL) BindPool(p NewElementNeed) {
+	e.pool = p
+}
+
+func (e *elementTPL) Raw() interface{} {
+	return e.item.Raw
+}
+
+func (e *elementTPL) PEActive() error {
+	if e.item.CheckActive == nil {
+		return ErrBadValue
+	}
+	return e.item.CheckActive()
+}
+
+func (e *elementTPL) PERawClose() error {
+	if e.item.Close == nil {
+		return nil
+	}
+	return e.item.Close()
+}
+
+func (e *elementTPL) Close() error {
+	return e.pool.Put(e)
 }

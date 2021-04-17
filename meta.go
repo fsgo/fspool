@@ -48,6 +48,13 @@ func (w *MetaInfo) PEMarkIdle() {
 	w.mu.Unlock()
 }
 
+// PESetID 给元素设置ID
+func (w *MetaInfo) PESetID(id uint64) {
+	w.mu.Lock()
+	w.meta.ID = id
+	w.mu.Unlock()
+}
+
 // Active 是否在有效期内
 func (w *MetaInfo) Active(opt Option) error {
 	w.mu.Lock()
@@ -73,6 +80,9 @@ func (w *MetaInfo) PEMeta() Meta {
 
 // Meta 元信息
 type Meta struct {
+	// ID  当前 Pool 创建的第N个元素
+	ID uint64
+
 	// CreateTime 创建时间
 	CreateTime time.Time
 

@@ -313,3 +313,36 @@ func TestSimplePool_Close(t *testing.T) {
 		testSimplePoolClose(t, p)
 	}
 }
+
+func TestNewSimpleElement(t *testing.T) {
+	type userInfo struct{}
+	opt := &Option{
+		MaxIdle: 0,
+	}
+	p := NewSimplePool(opt, func(ctx context.Context, need NewElementNeed) (Element, error) {
+		return NewSimpleElement(&SimpleRawItem{
+			Raw: &userInfo{},
+		}), nil
+	})
+
+	for i := 0; i < 10; i++ {
+		t.Run(fmt.Sprintf("id=%d", i), func(t *testing.T) {
+			item, err := p.Get(context.Background())
+			if err != nil {
+				t.Fatalf(err.Error())
+			}
+			val := item.(SimpleElement)
+			defer val.Close()
+			user := val.Raw().(*userInfo)
+			_ = user
+
+			meta := ReadMeta(val)
+			wantID := uint64(i) + 1
+			gotID := meta.ID
+			if gotID != wantID {
+				t.Fatalf("gotID=%d wantID=%d", gotID, wantID)
+			}
+		})
+	}
+
+}

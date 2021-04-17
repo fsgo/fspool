@@ -50,6 +50,8 @@ type simpleGroup struct {
 	mu        sync.Mutex
 	done      context.CancelFunc
 	closed    bool
+
+	nextID uint64
 }
 
 func (g *simpleGroup) Range(fn func(el Element) error) error {
@@ -84,6 +86,11 @@ func (g *simpleGroup) getPool(key interface{}) *groupPoolItem {
 	if !has {
 		fn := g.genNewEle(key)
 		pool := NewSimplePool(&g.option, fn)
+		pool.(interface{ OnNewElement(fn func(el Element)) }).OnNewElement(func(el Element) {
+			// 设置全局的 nextID
+			trySetNextID(el, &g.nextID)
+		})
+
 		p = newGroupPoolItem(pool)
 		g.pools[poolID] = p
 	}
