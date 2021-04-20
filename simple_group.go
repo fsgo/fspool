@@ -9,6 +9,7 @@ package fspool
 import (
 	"context"
 	"fmt"
+	"io"
 	"sync"
 	"time"
 )
@@ -33,11 +34,11 @@ func NewSimplePoolGroup(opt *Option, gn GroupNewElementFunc) SimplePoolGroup {
 
 // SimplePoolGroup 通用的、 按照 key 分组的 Pool
 type SimplePoolGroup interface {
-	Get(ctx context.Context, key interface{}) (Element, error)
+	Get(ctx context.Context, key interface{}) (io.Closer, error)
 	GroupStats() GroupStats
 	Close() error
 	Option() Option
-	Range(func(el Element) error) error
+	Range(func(el io.Closer) error) error
 }
 
 var _ SimplePoolGroup = (*simpleGroup)(nil)
@@ -54,7 +55,7 @@ type simpleGroup struct {
 	nextID uint64
 }
 
-func (g *simpleGroup) Range(fn func(el Element) error) error {
+func (g *simpleGroup) Range(fn func(io.Closer) error) error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	for _, pool := range g.pools {
@@ -70,7 +71,7 @@ func (g *simpleGroup) Option() Option {
 }
 
 // Get ...
-func (g *simpleGroup) Get(ctx context.Context, key interface{}) (Element, error) {
+func (g *simpleGroup) Get(ctx context.Context, key interface{}) (io.Closer, error) {
 	return g.getPool(key).Get(ctx)
 }
 

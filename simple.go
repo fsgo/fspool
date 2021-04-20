@@ -8,6 +8,7 @@ package fspool
 
 import (
 	"context"
+	"io"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -68,10 +69,10 @@ func NewSimplePool(option *Option, newFunc NewElementFunc) SimplePool {
 
 // SimplePool 一个简单的，通用的连接池
 type SimplePool interface {
-	Get(ctx context.Context) (el Element, err error)
+	Get(ctx context.Context) (io.Closer, error)
 	Option() Option
 	Stats() Stats
-	Range(func(el Element) error) error
+	Range(func(io.Closer) error) error
 	Close() error
 }
 
@@ -116,7 +117,9 @@ func (p *simplePool) Option() Option {
 }
 
 // Get get one from pool; from idle or create new
-func (p *simplePool) Get(ctx context.Context) (el Element, err error) {
+func (p *simplePool) Get(ctx context.Context) (io.Closer, error) {
+	var el Element
+	var err error
 	for i := 0; i < 2; i++ {
 		el, err = p.selectOne(ctx)
 		if err != ErrBadValue {
@@ -510,7 +513,7 @@ func (p *simplePool) Close() error {
 	return err
 }
 
-func (p *simplePool) Range(fn func(el Element) error) (err error) {
+func (p *simplePool) Range(fn func(el io.Closer) error) (err error) {
 	p.mu.Lock()
 	for _, el := range p.idles {
 		if err = fn(el); err != nil {
@@ -526,6 +529,7 @@ type SimpleRawItem struct {
 	Raw         interface{}
 	CheckActive func() error
 	Close       func() error
+	Reset       func()
 }
 
 // SimpleElement SimplePool 直接使用时的原始类型定义
@@ -558,6 +562,12 @@ func (e *elementTPL) BindPool(p NewElementNeed) {
 
 func (e *elementTPL) Raw() interface{} {
 	return e.item.Raw
+}
+
+func (e *elementTPL) PEReset() {
+	if e.item.Reset != nil {
+		e.item.Reset()
+	}
 }
 
 func (e *elementTPL) PEActive() error {

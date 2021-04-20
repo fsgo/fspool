@@ -32,7 +32,7 @@ type Option struct {
 ```go
 // Stats 状态
 type Stats struct {
-	MaxOpen int // Maximum number of open Elements to the pool.
+    Open bool // pool opening status
 
 	// SimplePool Status
 	NumOpen int // The number of established Elements both in use and idle.

@@ -8,6 +8,7 @@ package fspool
 
 import (
 	"context"
+	"io"
 	"net"
 )
 
@@ -49,7 +50,7 @@ type connGroup struct {
 }
 
 func (cg *connGroup) Range(fn func(el net.Conn) error) error {
-	return cg.raw.Range(func(el Element) error {
+	return cg.raw.Range(func(el io.Closer) error {
 		return fn(el.(net.Conn))
 	})
 }

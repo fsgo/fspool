@@ -9,6 +9,7 @@ package fspool
 import (
 	"context"
 	"fmt"
+	"io"
 	"reflect"
 	"sync"
 	"sync/atomic"
@@ -300,7 +301,7 @@ func TestSimplePool_Close(t *testing.T) {
 	}
 	item.Close()
 
-	err = p.Range(func(el Element) error {
+	err = p.Range(func(el io.Closer) error {
 		m := ReadMeta(el)
 		t.Logf("meta=%s", m.String())
 		return nil
@@ -319,9 +320,13 @@ func TestNewSimpleElement(t *testing.T) {
 	opt := &Option{
 		MaxIdle: 0,
 	}
+	var resetTotal int32
 	p := NewSimplePool(opt, func(ctx context.Context, need NewElementNeed) (Element, error) {
 		return NewSimpleElement(&SimpleRawItem{
 			Raw: &userInfo{},
+			Reset: func() {
+				atomic.AddInt32(&resetTotal, 1)
+			},
 		}), nil
 	})
 
@@ -341,6 +346,11 @@ func TestNewSimpleElement(t *testing.T) {
 			gotID := meta.ID
 			if gotID != wantID {
 				t.Fatalf("gotID=%d wantID=%d", gotID, wantID)
+			}
+
+			resetWant := int32(i)
+			if resetWant != resetTotal {
+				t.Fatalf("resetTotal=%d want=%d", resetTotal, resetWant)
 			}
 		})
 	}

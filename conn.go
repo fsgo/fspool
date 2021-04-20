@@ -8,6 +8,7 @@ package fspool
 
 import (
 	"context"
+	"io"
 	"net"
 	"sync"
 	"time"
@@ -66,7 +67,7 @@ func (cp *connPool) Put(value interface{}) error {
 }
 
 func (cp *connPool) Range(fn func(net.Conn) error) error {
-	return cp.raw.Range(func(el Element) error {
+	return cp.raw.Range(func(el io.Closer) error {
 		return fn(el.(net.Conn))
 	})
 }
