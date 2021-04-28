@@ -6,4 +6,4 @@ go:
   - "1.16"
   - master
 
-script: go test -race -cover ./... -v
+script: go test -race -cover ./...
