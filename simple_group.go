@@ -33,6 +33,9 @@ func NewSimplePoolGroup(opt *Option, gn GroupNewElementFunc) SimplePoolGroup {
 }
 
 // SimplePoolGroup 通用的、 按照 key 分组的 Pool
+//
+// 配置的 Option 是针对每个 key 的。
+// 如 MaxOpen=1，则允许每个 key 都最多创建1个实例
 type SimplePoolGroup interface {
 	Get(ctx context.Context, key interface{}) (io.Closer, error)
 	GroupStats() GroupStats
@@ -55,10 +58,10 @@ type simpleGroup struct {
 	nextID uint64
 }
 
-func (g *simpleGroup) Range(fn func(io.Closer) error) error {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	for _, pool := range g.pools {
+func (sg *simpleGroup) Range(fn func(io.Closer) error) error {
+	sg.mu.Lock()
+	defer sg.mu.Unlock()
+	for _, pool := range sg.pools {
 		if err := pool.Range(fn); err != nil {
 			return err
 		}
@@ -66,56 +69,56 @@ func (g *simpleGroup) Range(fn func(io.Closer) error) error {
 	return nil
 }
 
-func (g *simpleGroup) Option() Option {
-	return g.option
+func (sg *simpleGroup) Option() Option {
+	return sg.option
 }
 
 // Get ...
-func (g *simpleGroup) Get(ctx context.Context, key interface{}) (io.Closer, error) {
-	return g.getPool(key).Get(ctx)
+func (sg *simpleGroup) Get(ctx context.Context, key interface{}) (io.Closer, error) {
+	return sg.getPool(key).Get(ctx)
 }
 
-func (g *simpleGroup) getPool(key interface{}) *groupPoolItem {
+func (sg *simpleGroup) getPool(key interface{}) *groupPoolItem {
 	poolID := getPoolID(key)
-	g.mu.Lock()
-	defer g.mu.Unlock()
+	sg.mu.Lock()
+	defer sg.mu.Unlock()
 
-	if g.pools == nil {
-		g.pools = make(map[interface{}]*groupPoolItem)
+	if sg.pools == nil {
+		sg.pools = make(map[interface{}]*groupPoolItem)
 	}
-	p, has := g.pools[poolID]
+	p, has := sg.pools[poolID]
 	if !has {
-		fn := g.genNewEle(key)
-		pool := NewSimplePool(&g.option, fn)
+		fn := sg.genNewEle(key)
+		pool := NewSimplePool(&sg.option, fn)
 		pool.(interface{ OnNewElement(fn func(el Element)) }).OnNewElement(func(el Element) {
 			// 设置全局的 nextID
-			trySetNextID(el, &g.nextID)
+			trySetNextID(el, &sg.nextID)
 		})
 
 		p = newGroupPoolItem(pool)
-		g.pools[poolID] = p
+		sg.pools[poolID] = p
 	}
 	p.PEMarkUsing()
 	return p
 }
 
 // GroupStats Group 的状态信息
-func (g *simpleGroup) GroupStats() GroupStats {
-	g.mu.Lock()
-	defer g.mu.Unlock()
+func (sg *simpleGroup) GroupStats() GroupStats {
+	sg.mu.Lock()
+	defer sg.mu.Unlock()
 
 	gs := GroupStats{
-		Groups: make(map[interface{}]Stats, len(g.pools)),
+		Groups: make(map[interface{}]Stats, len(sg.pools)),
 		All: Stats{
-			Open: !g.closed,
+			Open: !sg.closed,
 		},
 	}
 
-	if g.pools == nil {
+	if sg.pools == nil {
 		return gs
 	}
 
-	for key, p := range g.pools {
+	for key, p := range sg.pools {
 		ls := p.Stats()
 
 		gs.Groups[key] = ls
@@ -133,52 +136,54 @@ func (g *simpleGroup) GroupStats() GroupStats {
 }
 
 // Close close pools
-func (g *simpleGroup) Close() error {
-	g.done()
+func (sg *simpleGroup) Close() error {
+	sg.done()
 
 	var err error
-	g.mu.Lock()
-	g.closed = true
+	sg.mu.Lock()
+	sg.closed = true
 
-	if g.pools != nil {
-		for _, p := range g.pools {
+	if sg.pools != nil {
+		for _, p := range sg.pools {
 			if e := p.Close(); e != nil {
 				err = e
 			}
 		}
-		g.pools = make(map[interface{}]*groupPoolItem)
+		sg.pools = make(map[interface{}]*groupPoolItem)
 	}
-	g.mu.Unlock()
+	sg.mu.Unlock()
 
 	return err
 }
 
-func (g *simpleGroup) poolCleaner(ctx context.Context, d time.Duration) {
+func (sg *simpleGroup) poolCleaner(ctx context.Context, d time.Duration) {
 	const minInterval = time.Minute
 
 	if d < minInterval {
 		d = minInterval
 	}
 	t := time.NewTimer(d)
+	defer t.Stop()
+
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-t.C:
 		}
-		g.doCheckExpire()
+		sg.doCheckExpire()
 	}
 }
 
-func (g *simpleGroup) doCheckExpire() {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	if g.pools == nil {
+func (sg *simpleGroup) doCheckExpire() {
+	sg.mu.Lock()
+	defer sg.mu.Unlock()
+	if sg.pools == nil {
 		return
 	}
 	var expires []interface{}
-	for k, p := range g.pools {
-		if p.Active(g.option) != nil {
+	for k, p := range sg.pools {
+		if p.Active(sg.option) != nil {
 			expires = append(expires, k)
 			p.Close()
 		}
@@ -188,7 +193,7 @@ func (g *simpleGroup) doCheckExpire() {
 	}
 
 	for k := range expires {
-		delete(g.pools, k)
+		delete(sg.pools, k)
 	}
 }
 

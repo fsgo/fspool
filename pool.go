@@ -92,19 +92,18 @@ func (opt *Option) String() string {
 
 // Stats Pool's Stats
 type Stats struct {
-	Open bool // pool opening status
+	Open bool // 连接池的状态，true-正常，false-已关闭
 
-	// simplePool Status
-	NumOpen int // The number of established Elements both in use and idle.
-	InUse   int // The number of Elements currently in use.
-	Idle    int // The number of idle Elements.
+	NumOpen int // 已打开的总数
+	InUse   int // 正被使用的总数
+	Idle    int // 连接池里空闲的总数
 
 	// Counters
-	WaitCount         int64         // The total number of Elements waited for.
-	WaitDuration      time.Duration // The total time blocked waiting for a new Element.
-	MaxIdleClosed     int64         // The total number of Elements closed.
-	MaxIdleTimeClosed int64         // The total number of Elements closed.
-	MaxLifeTimeClosed int64         // The total number of Elements closed.
+	WaitCount         int64         // 等待的请求数
+	WaitDuration      time.Duration // 等待的总时间
+	MaxIdleClosed     int64         // 由于超过 MaxIdle,被关闭的总数
+	MaxIdleTimeClosed int64         // 由于超过 MaxIdleTime，被关闭的总数
+	MaxLifeTimeClosed int64         // 由于超过 MaxLifetime，被关闭的总数
 }
 
 // String 序列化，调试用

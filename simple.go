@@ -401,7 +401,9 @@ func (p *simplePool) elementCleaner(d time.Duration) {
 	if d < minInterval {
 		d = minInterval
 	}
+
 	t := time.NewTimer(d)
+	defer t.Stop()
 
 	for {
 		select {
