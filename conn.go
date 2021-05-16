@@ -102,6 +102,7 @@ func newPConn(raw net.Conn, p NewElementNeed) *pConn {
 }
 
 var _ net.Conn = (*pConn)(nil)
+var _ SetError = (*pConn)(nil)
 var _ Element = (*pConn)(nil)
 
 type pConn struct {
@@ -118,7 +119,7 @@ type pConn struct {
 	writeStat uint8
 }
 
-func (c *pConn) setErr(err error) {
+func (c *pConn) SetError(err error) {
 	if err != nil {
 		c.mu.Lock()
 		c.lastErr = err
@@ -131,7 +132,7 @@ func (c *pConn) Read(b []byte) (n int, err error) {
 		c.readStat = statStart
 	})
 	n, err = c.raw.Read(b)
-	c.setErr(err)
+	c.SetError(err)
 	c.withLock(func() {
 		c.readStat = statDone
 	})
@@ -143,7 +144,7 @@ func (c *pConn) Write(b []byte) (n int, err error) {
 		c.writeStat = statStart
 	})
 	n, err = c.raw.Write(b)
-	c.setErr(err)
+	c.SetError(err)
 	c.withLock(func() {
 		c.writeStat = statDone
 	})
@@ -171,19 +172,19 @@ func (c *pConn) RemoteAddr() net.Addr {
 
 func (c *pConn) SetDeadline(t time.Time) error {
 	err := c.raw.SetDeadline(t)
-	c.setErr(err)
+	c.SetError(err)
 	return err
 }
 
 func (c *pConn) SetReadDeadline(t time.Time) error {
 	err := c.raw.SetReadDeadline(t)
-	c.setErr(err)
+	c.SetError(err)
 	return err
 }
 
 func (c *pConn) SetWriteDeadline(t time.Time) error {
 	err := c.raw.SetWriteDeadline(t)
-	c.setErr(err)
+	c.SetError(err)
 	return err
 }
 
@@ -208,7 +209,12 @@ func (c *pConn) PERawClose() error {
 func (c *pConn) PEActive() error {
 	c.mu.RLock()
 
-	if c.lastErr != nil || c.isDoing() {
+	if c.lastErr != nil {
+		c.mu.RUnlock()
+		return c.lastErr
+	}
+
+	if c.isDoing() {
 		c.mu.RUnlock()
 		return ErrBadValue
 	}

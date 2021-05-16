@@ -38,7 +38,7 @@ func (t *Transport) dialConn(ctx context.Context, req *http.Request, proxyURL *u
 
 	switch req.URL.Scheme {
 	case "https":
-		return t.dialTls(ctx, network, addr)
+		return t.dialTLS(ctx, network, addr)
 	}
 	return t.dial(ctx, network, addr)
 }
@@ -52,7 +52,7 @@ func (t *Transport) dial(ctx context.Context, network, addr string) (net.Conn, e
 	return zeroDialer.DialContext(ctx, network, addr)
 }
 
-func (t *Transport) dialTls(ctx context.Context, network, addr string) (net.Conn, error) {
+func (t *Transport) dialTLS(ctx context.Context, network, addr string) (net.Conn, error) {
 	if t.DialTLSContext != nil {
 		return t.DialTLSContext(ctx, network, addr)
 	}
@@ -76,6 +76,7 @@ func cloneTLSConfig(cfg *tls.Config) *tls.Config {
 	return cfg.Clone()
 }
 
+// RoundTrip 发送请求
 func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	defer closeRequest(req)
 	if err := checkRequest(req); err != nil {

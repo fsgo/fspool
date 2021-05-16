@@ -16,11 +16,11 @@ import (
 	"golang.org/x/net/idna"
 )
 
-func closeRequest(req *http.Request) error {
+func closeRequest(req *http.Request) {
 	if req.Body == nil {
-		return nil
+		return
 	}
-	return req.Body.Close()
+	req.Body.Close()
 }
 
 func checkRequest(req *http.Request) error {

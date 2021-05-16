@@ -8,6 +8,7 @@ package fspool
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"sync"
 	"sync/atomic"
@@ -553,9 +554,11 @@ var _ Element = (*elementTPL)(nil)
 var _ PEBindPool = (*elementTPL)(nil)
 
 type elementTPL struct {
+	err error
 	*MetaInfo
 	item *SimpleRawItem
 	pool NewElementNeed
+	rw   sync.RWMutex
 }
 
 func (e *elementTPL) BindPool(p NewElementNeed) {
@@ -573,6 +576,13 @@ func (e *elementTPL) PEReset() {
 }
 
 func (e *elementTPL) PEActive() error {
+	var err error
+	e.rw.RLock()
+	err = e.err
+	e.rw.RUnlock()
+	if err != nil {
+		return err
+	}
 	if e.item.CheckActive == nil {
 		return ErrBadValue
 	}
@@ -588,4 +598,44 @@ func (e *elementTPL) PERawClose() error {
 
 func (e *elementTPL) Close() error {
 	return e.pool.Put(e)
+}
+
+func (e *elementTPL) SetError(err error) {
+	if err == nil {
+		return
+	}
+	e.rw.Lock()
+	e.err = err
+	e.rw.Unlock()
+}
+
+// SetError 设置错误
+type SetError interface {
+	SetError(err error)
+}
+
+// TrySetError 尝试设置错误，若设置成功返回 true,否则返回 false
+//
+// obj 必须实现了 SetError:
+// 	type SetError interface {
+// 		SetError(err error)
+// 	}
+func TrySetError(obj interface{}, err error) bool {
+	if se, ok := obj.(SetError); ok {
+		se.SetError(err)
+		return true
+	}
+	return false
+}
+
+// MustSetError 设置错误,若失败会panic
+//
+// obj 必须实现了 SetError:
+// 	type SetError interface {
+// 		SetError(err error)
+// 	}
+func MustSetError(obj interface{}, err error) {
+	if !TrySetError(obj, err) {
+		panic(fmt.Sprintf("SetError failed, %T not implement SetError interface", obj))
+	}
 }

@@ -356,3 +356,28 @@ func TestNewSimpleElement(t *testing.T) {
 	}
 
 }
+
+func TestMustSetError(t *testing.T) {
+	t.Run("case 1-ok", func(t *testing.T) {
+		item := &pConn{}
+		err := fmt.Errorf("err")
+		MustSetError(item, err)
+		got := item.PEActive()
+		if got != err {
+			t.Fatalf("PEActive got=%v want=%v", got, err)
+		}
+	})
+
+	t.Run("case 2-panic", func(t *testing.T) {
+		type u struct {
+		}
+		item := &u{}
+		err := fmt.Errorf("err")
+		defer func() {
+			if re := recover(); re == nil {
+				t.Fatalf("expect panic")
+			}
+		}()
+		MustSetError(item, err)
+	})
+}
