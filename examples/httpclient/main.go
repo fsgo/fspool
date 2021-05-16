@@ -9,12 +9,14 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"flag"
 	"fmt"
 	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"runtime"
 	"strconv"
@@ -22,6 +24,7 @@ import (
 	"time"
 
 	"github.com/fsgo/fspool"
+	"github.com/fsgo/fspool/httptransport"
 )
 
 var pg fspool.ConnPoolGroup
@@ -47,17 +50,28 @@ func main() {
 }
 
 func doQuery(callURL string) {
-	ts := &http.Transport{
-		// DisableKeepAlives: true,
+	ts := &httptransport.Transport{
 		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-			conn, err := pg.Get(ctx, fspool.NewAddr(network, addr))
-			log.Println(connInfo("Transport Pool.Get", addr, conn, err))
-			return conn, err
+			ad := fspool.NewAddr(network, addr)
+			return pg.Get(ctx, ad)
+		},
+		DialTLSContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			ad := fspool.NewAddr(network, addr)
+			conn, err := pg.Get(ctx, ad)
+			if err != nil {
+				return nil, err
+			}
+			c := &tls.Config{
+				InsecureSkipVerify: true,
+			}
+			return tls.Client(conn, c), nil
+		},
+		Proxy: func(request *http.Request) (*url.URL, error) {
+			return url.Parse("http://127.0.0.1:3128/")
 		},
 	}
-	defer ts.CloseIdleConnections()
 	log.Println("Request:", callURL)
-	req, _ := http.NewRequest("get", callURL, nil)
+	req, _ := http.NewRequest("GET", callURL, nil)
 	// req.Close=true
 	resp, err := ts.RoundTrip(req)
 	if err != nil {
@@ -90,13 +104,13 @@ func init() {
 func connInfo(prefix string, addr string, conn net.Conn, err error) string {
 	var buf bytes.Buffer
 	buf.WriteString(fmt.Sprintf("%-20s", prefix))
-	buf.WriteString(" addr=")
+	buf.WriteString(" remoteAddr=")
 	buf.WriteString(addr)
 	buf.WriteString(", ")
 	if err != nil {
 		buf.WriteString("error=" + err.Error())
 	} else {
-		buf.WriteString("LocalAddr=" + conn.LocalAddr().String())
+		buf.WriteString("localAddr=" + conn.LocalAddr().String())
 	}
 	return buf.String()
 }
