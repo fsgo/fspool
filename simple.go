@@ -43,6 +43,11 @@ type PEReseter interface {
 	PEReset()
 }
 
+// PERaw raw value
+type PERaw interface {
+	Raw() interface{}
+}
+
 // PEBindPool bind element to pool
 type PEBindPool interface {
 	BindPool(p NewElementNeed)
@@ -525,12 +530,19 @@ func (p *simplePool) Range(fn func(el io.Closer) error) (err error) {
 	return err
 }
 
-// SimpleRawItem 原始的数据
+// SimpleRawItem 原始的数据，NewSimpleElement 的参数
 type SimpleRawItem struct {
-	Raw         interface{}
-	CheckActive func() error
-	Close       func() error
-	Reset       func()
+	// Raw 原始对象
+	Raw interface{}
+
+	// CheckActive 判断对象元素对象是否有有效，可选
+	CheckActive func(raw interface{}) error
+
+	// 关闭元素，可选
+	Close func(raw interface{}) error
+
+	// 重置元素，可选
+	Reset func(raw interface{})
 }
 
 // SimpleElement SimplePool 直接使用时的原始类型定义
@@ -569,7 +581,7 @@ func (e *elementTPL) Raw() interface{} {
 
 func (e *elementTPL) PEReset() {
 	if e.item.Reset != nil {
-		e.item.Reset()
+		e.item.Reset(e.item.Raw)
 	}
 }
 
@@ -578,20 +590,28 @@ func (e *elementTPL) PEActive() error {
 	e.rw.RLock()
 	err = e.err
 	e.rw.RUnlock()
+
 	if err != nil {
 		return err
 	}
-	if e.item.CheckActive == nil {
-		return ErrBadValue
+	if err = e.MetaInfo.Active(e.pool.Option()); err != nil {
+		return err
 	}
-	return e.item.CheckActive()
+	if e.item.CheckActive != nil {
+		return e.item.CheckActive(e.item.Raw)
+	}
+	return nil
 }
 
 func (e *elementTPL) PERawClose() error {
-	if e.item.Close == nil {
-		return nil
+	if e.item.Close != nil {
+		return e.item.Close(e.item.Raw)
 	}
-	return e.item.Close()
+
+	if cr, ok := e.item.Raw.(io.Closer); ok {
+		return cr.Close()
+	}
+	return nil
 }
 
 func (e *elementTPL) Close() error {

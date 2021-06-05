@@ -27,7 +27,7 @@ var ErrOutOfMaxIdleTime = errors.New("out of max idle time")
 var nowFunc = time.Now
 
 // ErrClosed 对象池已关闭
-var ErrClosed = errors.New("already closed")
+var ErrClosed = errors.New("pool already closed")
 
 // Pool 通用的 Pool 接口定义
 type Pool interface {
