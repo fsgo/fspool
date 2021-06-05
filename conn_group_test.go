@@ -1,8 +1,6 @@
-/*
- * Copyright(C) 2021 github.com/hidu  All Rights Reserved.
- * Author: hidu (duv123+git@baidu.com)
- * Date: 2021/3/29
- */
+// Copyright(C) 2021 github.com/hidu  All Rights Reserved.
+// Author: hidu (duv123+git@baidu.com)
+// Date: 2021/3/29
 
 package fspool
 

@@ -1,8 +1,6 @@
-/*
- * Copyright(C) 2021 github.com/hidu  All Rights Reserved.
- * Author: hidu (duv123+git@baidu.com)
- * Date: 2021/3/23
- */
+// Copyright(C) 2021 github.com/hidu  All Rights Reserved.
+// Author: hidu (duv123+git@baidu.com)
+// Date: 2021/3/23
 
 package fspool
 
@@ -41,8 +39,8 @@ func TestNewSimpleGroup(t *testing.T) {
 			var got int
 			for i := 0; i < 100; i++ {
 				got = runtime.NumGoroutine()
-				if got>gorn {
-					t.Logf("Goroutine()=%d want=%d, wait...",got,gorn)
+				if got > gorn {
+					t.Logf("Goroutine()=%d want=%d, wait...", got, gorn)
 					time.Sleep(time.Second)
 				} else {
 					return
