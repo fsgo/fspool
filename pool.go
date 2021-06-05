@@ -40,22 +40,22 @@ type Pool interface {
 	Option() Option
 }
 
-// Option pool option
+// Option pool 配置选项
 type Option struct {
-	// MaxOpen max opening Element
-	// <= 0 means unlimited
+	// MaxOpen 最大打开数量
+	// <= 0 为不限制
 	MaxOpen int
 
-	// MaxIdle
-	// <=0 means disabled
+	// MaxIdle 最大空闲数，应 <= MaxOpen
+	// <=0 为不允许存在 Idle 元素
 	MaxIdle int
 
-	// MaxLifeTime
-	// maximum amount of time a Element may be reused
+	// MaxLifeTime 最大使用时长，超过后将被销毁
+	// <=0 为不限制
 	MaxLifeTime time.Duration
 
-	// MaxIdleTime
-	// maximum amount of time a Element may be idle before being closed
+	// MaxIdleTime 最大空闲等待时间，超过后将被销毁
+	// <=0 为不限制
 	MaxIdleTime time.Duration
 }
 

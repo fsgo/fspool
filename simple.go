@@ -1,8 +1,6 @@
-/*
- * Copyright(C) 2021 github.com/hidu  All Rights Reserved.
- * Author: hidu (duv123+git@baidu.com)
- * Date: 2021/3/21
- */
+// Copyright(C) 2021 github.com/fsgo  All Rights Reserved.
+// Author: fsgo
+// Date: 2021/3/21
 
 package fspool
 
@@ -628,7 +626,7 @@ func TrySetError(obj interface{}, err error) bool {
 	return false
 }
 
-// MustSetError 设置错误,若失败会panic
+// MustSetError 设置错误,若失败会 panic
 //
 // obj 必须实现了 SetError:
 // 	type SetError interface {

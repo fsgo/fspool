@@ -7,23 +7,22 @@
 
 ## 1. 连接池配置
 ```go
-// Option pool option
 type Option struct {
-	// MaxOpen max opening element
-	// <= 0 means unlimited
-	MaxOpen int
-
-	// MaxIdle
-	// <=0 means disabled
-	MaxIdle int
-
-	// MaxLifetime
-	// maximum amount of time a Element may be reused
-	MaxLifetime time.Duration
-
-	// MaxIdleTime
-	// maximum amount of time a Element may be idle before being closed
-	MaxIdleTime time.Duration
+    // MaxOpen 最大打开数量
+    // <= 0 为不限制
+    MaxOpen int
+    
+    // MaxIdle 最大空闲数，应 <= MaxOpen
+    // <=0 为不允许存在 Idle 元素
+    MaxIdle int
+    
+    // MaxLifeTime 最大使用时长，超过后将被销毁
+    // <=0 为不限制
+    MaxLifeTime time.Duration
+    
+    // MaxIdleTime 最大空闲等待时间，超过后将被销毁
+    // <=0 为不限制
+    MaxIdleTime time.Duration
 }
 ```
 

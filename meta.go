@@ -48,7 +48,7 @@ func (w *MetaInfo) PEMarkIdle() {
 	w.mu.Unlock()
 }
 
-// PESetID 给元素设置ID
+// PESetID 给元素设置 ID
 func (w *MetaInfo) PESetID(id uint64) {
 	w.mu.Lock()
 	w.meta.ID = id

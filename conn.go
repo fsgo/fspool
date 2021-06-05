@@ -230,5 +230,17 @@ func (c *pConn) PEActive() error {
 			return ea
 		}
 	}
+
+	// 检查连接是否有效
+	if err := connCheck(c.rawConn()); err != nil {
+		return err
+	}
 	return nil
+}
+
+func (c *pConn) rawConn() net.Conn {
+	if r, ok := c.raw.(interface{ Raw() net.Conn }); ok {
+		return r.Raw()
+	}
+	return c.raw
 }

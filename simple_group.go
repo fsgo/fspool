@@ -162,7 +162,7 @@ func (sg *simpleGroup) poolCleaner(ctx context.Context, d time.Duration) {
 	if d < minInterval {
 		d = minInterval
 	}
-	t := time.NewTimer(d)
+	t := time.NewTicker(d)
 	defer t.Stop()
 
 	for {

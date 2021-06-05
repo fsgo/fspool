@@ -19,12 +19,14 @@ import (
 
 type testEL struct {
 	*MetaInfo
-	id      int32
-	p       NewElementNeed
-	val     int64
-	name    string
-	mu      sync.Mutex
-	lastErr error
+	id         int32
+	p          NewElementNeed
+	val        int64
+	name       string
+	mu         sync.Mutex
+	lastErr    error
+	onRawClose func(id int32)
+	onClose    func(id int32, err error)
 }
 
 func (t *testEL) Name() string {
@@ -59,10 +61,17 @@ func (t *testEL) PEActive() error {
 }
 
 func (t *testEL) Close() error {
-	return t.p.Put(t)
+	err := t.p.Put(t)
+	if t.onClose != nil {
+		t.onClose(t.id, err)
+	}
+	return err
 }
 
 func (t *testEL) PERawClose() error {
+	if t.onRawClose != nil {
+		t.onRawClose(t.id)
+	}
 	return nil
 }
 
@@ -250,9 +259,9 @@ func TestNewSimple(t *testing.T) {
 					val := item.(*testEL)
 
 					mu.Lock()
-					id := val.ID()
-					if id > idMax {
-						idMax = id
+					id1 := val.ID()
+					if id1 > idMax {
+						idMax = id1
 					}
 					mu.Unlock()
 
@@ -276,10 +285,17 @@ func TestNewSimple(t *testing.T) {
 }
 
 func testSimplePoolClose(t *testing.T, p SimplePool) {
+	sp := p.(*simplePool)
+
 	t.Run("Close", func(t *testing.T) {
 		if err := p.Close(); err != nil {
 			t.Fatalf("Close() has error=%v", err)
 		}
+
+		if got := len(sp.idles); got > 0 {
+			t.Fatalf("len(sp.idles)=%v want=0", got)
+		}
+
 		el, err := p.Get(context.Background())
 		if err == nil {
 			t.Fatalf("expect not nil")
@@ -291,27 +307,106 @@ func testSimplePoolClose(t *testing.T, p SimplePool) {
 }
 
 func TestSimplePool_Close(t *testing.T) {
-	p := NewSimplePool(nil, func(ctx context.Context, pool NewElementNeed) (Element, error) {
-		return &testEL{id: 100, p: pool, MetaInfo: NewMetaInfo()}, nil
-	})
-
-	item, err := p.Get(context.Background())
-	if err != nil {
-		t.Fatalf(err.Error())
+	tests := []struct {
+		name       string
+		opt        *Option
+		wantClosed int
+	}{
+		{
+			name:       "case 1 nil opt",
+			opt:        nil,
+			wantClosed: 6,
+		},
+		{
+			name: "case 2 opt MaxIdle-1",
+			opt: &Option{
+				MaxIdle: 1,
+			},
+			wantClosed: 5,
+		},
+		{
+			name: "case 3 opt MaxIdle-2",
+			opt: &Option{
+				MaxIdle: 2,
+			},
+			wantClosed: 5,
+		},
 	}
-	item.Close()
 
-	err = p.Range(func(el io.Closer) error {
-		m := ReadMeta(el)
-		t.Logf("meta=%s", m.String())
-		return nil
-	})
-	if err != nil {
-		t.Fatalf(err.Error())
-	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			closed := map[int32]bool{}
+			var mu sync.Mutex
+			onRawClose := func(id int32) {
+				t.Logf("onRawClose id=%d", id)
+				mu.Lock()
+				closed[id] = true
+				mu.Unlock()
+			}
+			onClose := func(id int32, err error) {
+				t.Logf("onClose id=%d, err=%v", id, err)
+			}
+			var elID int32 = 0
+			// 使用默认选项，不允许有 idle 元素
+			p := NewSimplePool(tt.opt, func(ctx context.Context, pool NewElementNeed) (Element, error) {
+				return &testEL{
+					id:         atomic.AddInt32(&elID, 1),
+					p:          pool,
+					MetaInfo:   NewMetaInfo(),
+					onRawClose: onRawClose,
+					onClose:    onClose,
+				}, nil
+			})
 
-	for i := 0; i < 2; i++ {
-		testSimplePoolClose(t, p)
+			item, err := p.Get(context.Background())
+			if err != nil {
+				t.Fatalf(err.Error())
+			}
+			item.Close() // 会将对象放回 pool
+			t.Logf("first close,%v", p.Stats())
+			t.Logf("option= %v", p.Option())
+
+			var closers []func() error
+
+			for i := 0; i < 5; i++ {
+				item, err = p.Get(context.Background())
+				if err != nil {
+					t.Fatalf(err.Error())
+				}
+				// close it after pool closed
+				closers = append(closers, item.Close)
+			}
+
+			err = p.Range(func(el io.Closer) error {
+				m := ReadMeta(el)
+				t.Logf("meta=%s", m.String())
+				return nil
+			})
+			if err != nil {
+				t.Fatalf(err.Error())
+			}
+
+			sp := p.(*simplePool)
+
+			for i := 0; i < 2; i++ {
+				testSimplePoolClose(t, p)
+
+				if got := len(sp.idles); got != 0 {
+					t.Fatalf("len(sp.idles)=%d, want=%d", got, 0)
+				}
+			}
+
+			for _, closeFn := range closers {
+				_ = closeFn()
+			}
+
+			mu.Lock()
+			got := len(closed)
+			mu.Unlock()
+			if got != tt.wantClosed {
+				t.Fatalf("closed=%d want=%d", got, tt.wantClosed)
+			}
+		})
 	}
 }
 
