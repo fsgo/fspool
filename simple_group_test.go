@@ -41,7 +41,8 @@ func TestNewSimpleGroup(t *testing.T) {
 			var got int
 			for i := 0; i < 100; i++ {
 				got = runtime.NumGoroutine()
-				if gorn != got {
+				if got>gorn {
+					t.Logf("Goroutine()=%d want=%d, wait...",got,gorn)
 					time.Sleep(time.Second)
 				} else {
 					return
