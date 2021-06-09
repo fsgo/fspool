@@ -190,7 +190,7 @@ func (sg *simpleGroup) doCheckExpire() {
 		return
 	}
 
-	for k := range expires {
+	for _,k := range expires {
 		delete(sg.pools, k)
 	}
 }

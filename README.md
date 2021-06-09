@@ -68,7 +68,7 @@ meta:=fspool.ReadMeta(conn)
 
 每个IP 都有独立的连接池。  
 配置的 Option 是针对每个IP的。
-如 MaxOpen=1，则允许每个 IP 都都最多创建1个连接，上面共有3个IP，则一一共最多创建3个连接。 
+如 MaxOpen=1，则允许每个 IP 都最多创建1个连接，上面共有3个IP，则一共最多创建9个连接。 
 
 ConnPoolGroup 是基于 ConnPool 封装而来。
 
