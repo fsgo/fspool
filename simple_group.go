@@ -21,8 +21,15 @@ func NewSimplePoolGroup(opt *Option, gn GroupNewElementFunc) SimplePoolGroup {
 		opt = &Option{}
 	}
 	ctx, cancel := context.WithCancel(context.Background())
+	sgOpt := opt.Clone()
+	sgOpt.MaxLifeTime = 0
+	minIdle := 5 * time.Minute
+	if sgOpt.MaxIdleTime < minIdle {
+		sgOpt.MaxIdleTime = minIdle
+	}
 	g := &simpleGroup{
 		option:    *opt.Clone(),
+		sgOption:  *sgOpt,
 		done:      cancel,
 		genNewEle: gn,
 	}
@@ -47,6 +54,7 @@ var _ SimplePoolGroup = (*simpleGroup)(nil)
 // simpleGroup group pool
 type simpleGroup struct {
 	option    Option
+	sgOption  Option
 	genNewEle GroupNewElementFunc
 	pools     map[interface{}]*groupPoolItem
 	mu        sync.Mutex
@@ -160,6 +168,7 @@ func (sg *simpleGroup) poolCleaner(ctx context.Context, d time.Duration) {
 	if d < minInterval {
 		d = minInterval
 	}
+
 	t := time.NewTicker(d)
 	defer t.Stop()
 
@@ -181,7 +190,7 @@ func (sg *simpleGroup) doCheckExpire() {
 	}
 	var expires []interface{}
 	for k, p := range sg.pools {
-		if p.Active(sg.option) != nil {
+		if p.Active(sg.sgOption) != nil {
 			expires = append(expires, k)
 			p.Close()
 		}
@@ -190,7 +199,7 @@ func (sg *simpleGroup) doCheckExpire() {
 		return
 	}
 
-	for _,k := range expires {
+	for _, k := range expires {
 		delete(sg.pools, k)
 	}
 }

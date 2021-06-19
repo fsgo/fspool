@@ -261,6 +261,7 @@ func (p *simplePool) nextRequestKeyLocked() uint64 {
 func (p *simplePool) Put(el interface{}) error {
 	if el == nil {
 		p.putElement(nil, ErrBadValue)
+		return nil
 	}
 	// if type invalid, then panic
 	p.putElement(el.(Element), nil)
