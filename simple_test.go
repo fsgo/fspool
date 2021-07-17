@@ -15,6 +15,8 @@ import (
 	"time"
 )
 
+var _ Element = (*testEL)(nil)
+
 type testEL struct {
 	*MetaInfo
 	id         int32
@@ -29,6 +31,12 @@ type testEL struct {
 
 func (t *testEL) Name() string {
 	return t.name
+}
+
+func (t *testEL) SetError(err error) {
+	t.mu.Lock()
+	t.lastErr = err
+	t.mu.Unlock()
 }
 
 func (t *testEL) ID() int32 {
@@ -75,8 +83,6 @@ func (t *testEL) PERawClose() error {
 	}
 	return nil
 }
-
-var _ Element = (*testEL)(nil)
 
 func TestNewSimple(t *testing.T) {
 	var id int32
@@ -287,7 +293,7 @@ func TestNewSimple(t *testing.T) {
 		}
 
 		// todo check idMax == wantN
-		if int(idMax) < wantN{
+		if int(idMax) < wantN {
 			t.Fatalf("idMax=%d want = %d", idMax, wantN)
 		}
 	})
@@ -491,6 +497,64 @@ func TestMustSetError(t *testing.T) {
 			}
 		}()
 		MustSetError(item, err)
+	})
+}
+
+func TestSimplePool_Get_BadEls(t *testing.T) {
+	opt := &Option{
+		MaxOpen: 50,
+		MaxIdle: 50,
+	}
+	var id int32
+	p := NewSimplePool(opt, func(ctx context.Context, pool NewElementNeed) (Element, error) {
+		id++
+		return &testEL{id: id, p: pool, MetaInfo: NewMetaInfo()}, nil
+	})
+	defer p.Close()
+
+	var els []io.Closer
+
+	// get many fresh els from pool
+	for i := 0; i < opt.MaxOpen; i++ {
+		el, err := p.Get(context.Background())
+		if err != nil {
+			t.Fatalf(err.Error())
+		}
+		els = append(els, el)
+	}
+
+	for _, el := range els {
+		el.Close()
+	}
+
+	rowPool := p.(*simplePool)
+	t.Run("check idle num", func(t *testing.T) {
+		got := len(rowPool.idles)
+		want := len(els)
+		if got != want {
+			t.Fatalf("got=%v want=%v", got, want)
+		}
+	})
+
+	for _, el := range els {
+		MustSetError(el, fmt.Errorf("bad"))
+	}
+
+	t.Run("get one", func(t *testing.T) {
+		el, err := p.Get(context.Background())
+		if err != nil {
+			t.Fatalf(err.Error())
+		}
+		got := el.(*testEL).ID()
+		want := int32(opt.MaxOpen) + 1
+		if got != want {
+			t.Fatalf("testEL.ID()=%d want=%d", got, want)
+		}
+		gotIdle := len(rowPool.idles)
+		wantIdle := 0
+		if gotIdle != wantIdle {
+			t.Fatalf("got idles=%v want=%v", gotIdle, wantIdle)
+		}
 	})
 }
 

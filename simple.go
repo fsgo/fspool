@@ -166,16 +166,14 @@ func (p *simplePool) selectOne(ctx context.Context) (el Element, err error) {
 	}
 
 	// try get from idle
-	numFree := len(p.idles)
-	if numFree > 0 {
+	for len(p.idles) > 0 {
 		el = p.idles[0]
 		copy(p.idles, p.idles[1:])
-		p.idles = p.idles[:numFree-1]
+		p.idles = p.idles[:len(p.idles)-1]
 		if ea := el.PEActive(); ea != nil {
 			p.countClosed(ea)
-			p.mu.Unlock()
 			el.PERawClose()
-			return nil, ErrBadValue
+			continue
 		}
 		p.mu.Unlock()
 		return el, nil
