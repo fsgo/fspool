@@ -150,6 +150,10 @@ func (c *pConn) Write(b []byte) (n int, err error) {
 }
 
 func (c *pConn) PEReset() {
+	_ = c.SetDeadline(time.Time{})
+	_ = c.SetReadDeadline(time.Time{})
+	_ = c.SetWriteDeadline(time.Time{})
+
 	c.withLock(func() {
 		c.readStat = statInit
 		c.writeStat = statInit
