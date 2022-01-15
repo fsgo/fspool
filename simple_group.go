@@ -131,6 +131,7 @@ func (sg *simpleGroup) GroupStats() GroupStats {
 
 		gs.All.Idle += ls.Idle
 		gs.All.NumOpen += ls.NumOpen
+		gs.All.Wait += ls.Wait
 		gs.All.InUse += ls.InUse
 		gs.All.WaitCount += ls.WaitCount
 		gs.All.WaitDuration += ls.WaitDuration

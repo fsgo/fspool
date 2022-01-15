@@ -5,41 +5,33 @@
 package fspool
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"time"
 )
 
-// ErrBadValue not active element
-var ErrBadValue = errors.New("bad pool value")
+var (
+	// ErrBadValue not active element
+	ErrBadValue = errors.New("bad pool value")
 
-// ErrOutOfMaxLife out of max life
-var ErrOutOfMaxLife = errors.New("out of max life")
+	// ErrOutOfMaxLife out of max life
+	ErrOutOfMaxLife = errors.New("out of max life")
 
-// ErrOutOfMaxIdle out of max idle
-var ErrOutOfMaxIdle = errors.New("out of max idle")
+	// ErrOutOfMaxIdle out of max idle
+	ErrOutOfMaxIdle = errors.New("out of max idle")
 
-// ErrOutOfMaxIdleTime out of max idle time
-var ErrOutOfMaxIdleTime = errors.New("out of max idle time")
+	// ErrOutOfMaxIdleTime out of max idle time
+	ErrOutOfMaxIdleTime = errors.New("out of max idle time")
 
-// ErrClosedPool 对象池已关闭
-var ErrClosedPool = errors.New("pool already closed")
+	// ErrClosedPool 对象池已关闭
+	ErrClosedPool = errors.New("pool already closed")
 
-// ErrClosedValue value 被多次 close
-var ErrClosedValue = errors.New("pool value already closed")
+	// ErrClosedValue value 被多次 close
+	ErrClosedValue = errors.New("pool value already closed")
+)
 
 // nowFunc returns the current time; it's overridden in tests.
 var nowFunc = time.Now
-
-// Pool 通用的 Pool 接口定义
-type Pool interface {
-	Get(ctx context.Context) (interface{}, error)
-	Put(interface{}) error
-	Stats() Stats
-	Close() error
-	Option() Option
-}
 
 // Option pool 配置选项
 type Option struct {
@@ -95,14 +87,15 @@ func (opt *Option) String() string {
 type Stats struct {
 	Open bool // 连接池的状态，true-正常，false-已关闭
 
-	NumOpen int // 已打开的总数
-	InUse   int // 正被使用的总数
-	Idle    int // 连接池里空闲的总数
+	NumOpen int // 当前，已打开的总数
+	InUse   int // 当前，正被使用的总数
+	Idle    int // 当前，连接池里空闲的总数
+	Wait    int // 当前，当前等待的总数
 
 	// Counters
-	WaitCount         int64         // 等待的请求数
-	WaitDuration      time.Duration // 等待的总时间
-	MaxIdleClosed     int64         // 由于超过 MaxIdle,被关闭的总数
+	WaitCount         int64         // 累计等待的请求数
+	WaitDuration      time.Duration // 累计等待的总时间
+	MaxIdleClosed     int64         // 由于超过 MaxIdle, 被关闭的总数
 	MaxIdleTimeClosed int64         // 由于超过 MaxIdleTime，被关闭的总数
 	MaxLifeTimeClosed int64         // 由于超过 MaxLifetime，被关闭的总数
 }
@@ -117,10 +110,4 @@ func (s Stats) String() string {
 type GroupStats struct {
 	Groups map[interface{}]Stats
 	All    Stats
-}
-
-// NewElementNeed 创建新 Element 时所需要的
-type NewElementNeed interface {
-	Put(interface{}) error
-	Option() Option
 }

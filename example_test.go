@@ -23,7 +23,7 @@ func ExampleNewSimplePool() {
 		MaxIdle: 1,
 	}
 
-	fn := func(ctx context.Context, need fspool.NewElementNeed) (fspool.Element, error) {
+	fn := func(ctx context.Context, need fspool.PoolPutter) (fspool.Element, error) {
 		return fspool.NewSimpleElement(&fspool.SimpleRawItem{
 			Raw: &userInfo{},
 			Reset: func(raw interface{}) {

@@ -17,7 +17,7 @@ type NewConnFunc func(ctx context.Context) (net.Conn, error)
 
 // Trans 转换为原始的 NewElementFunc
 func (nf NewConnFunc) Trans(p *connPool) NewElementFunc {
-	return func(ctx context.Context, pool NewElementNeed) (Element, error) {
+	return func(ctx context.Context, pool PoolPutter) (Element, error) {
 		raw, err := nf(ctx)
 		if err != nil {
 			return nil, err
@@ -44,6 +44,7 @@ type ConnPool interface {
 }
 
 var _ ConnPool = (*connPool)(nil)
+var _ PoolPutter = (*connPool)(nil)
 
 // connPool 网络连接池
 type connPool struct {
@@ -61,7 +62,7 @@ func (cp *connPool) Get(ctx context.Context) (el net.Conn, err error) {
 
 // Put put to pool
 func (cp *connPool) Put(value interface{}) error {
-	return cp.raw.(NewElementNeed).Put(value)
+	return cp.raw.(PoolPutter).Put(value)
 }
 
 func (cp *connPool) Range(fn func(net.Conn) error) error {
@@ -91,7 +92,7 @@ const (
 	statDone
 )
 
-func newPConn(raw net.Conn, p NewElementNeed) *pConn {
+func newPConn(raw net.Conn, p PoolPutter) *pConn {
 	return &pConn{
 		raw:      raw,
 		pool:     p,
@@ -106,7 +107,7 @@ var _ Element = (*pConn)(nil)
 type pConn struct {
 	*MetaInfo
 
-	pool    NewElementNeed
+	pool    PoolPutter
 	lastErr error
 	raw     net.Conn
 
@@ -252,6 +253,12 @@ func (c *pConn) Raw() net.Conn {
 	return c.raw
 }
 
+var _ HasRaw = (*pConn)(nil)
+
+func (c *pConn) PERaw() interface{} {
+	return c.Raw()
+}
+
 func (c *pConn) PERawClose() error {
 	if c.isClosed() {
 		return ErrClosedValue
@@ -282,7 +289,7 @@ func (c *pConn) PEActive() error {
 		return ea
 	}
 
-	if ra, ok := c.raw.(PEActiver); ok {
+	if ra, ok := c.raw.(CanCheckActive); ok {
 		if ea := ra.PEActive(); ea != nil {
 			return ea
 		}

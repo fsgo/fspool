@@ -15,7 +15,7 @@ type GroupNewConnFunc func(addr net.Addr) NewConnFunc
 
 func (gn GroupNewConnFunc) trans() GroupNewElementFunc {
 	return func(key interface{}) NewElementFunc {
-		return func(ctx context.Context, pool NewElementNeed) (Element, error) {
+		return func(ctx context.Context, pool PoolPutter) (Element, error) {
 			conn, err := gn(key.(net.Addr))(ctx)
 			if err != nil {
 				return nil, err

@@ -22,7 +22,7 @@ var _ Element = (*testEL)(nil)
 type testEL struct {
 	*MetaInfo
 	id         int32
-	p          NewElementNeed
+	p          PoolPutter
 	val        int64
 	name       string
 	mu         sync.Mutex
@@ -93,7 +93,7 @@ func TestNewSimple(t *testing.T) {
 		atomic.StoreInt32(&id, 0)
 	}
 
-	newFunc := func(ctx context.Context, p NewElementNeed) (Element, error) {
+	newFunc := func(ctx context.Context, p PoolPutter) (Element, error) {
 		v := atomic.AddInt32(&id, 1)
 		return &testEL{id: v, p: p, MetaInfo: NewMetaInfo()}, nil
 	}
@@ -347,7 +347,7 @@ func TestSimplePool_Close(t *testing.T) {
 			}
 			var elID int32 = 0
 			// 使用默认选项，不允许有 idle 元素
-			p := NewSimplePool(tt.opt, func(ctx context.Context, pool NewElementNeed) (Element, error) {
+			p := NewSimplePool(tt.opt, func(ctx context.Context, pool PoolPutter) (Element, error) {
 				return &testEL{
 					id:         atomic.AddInt32(&elID, 1),
 					p:          pool,
@@ -408,7 +408,7 @@ func TestNewSimpleElement(t *testing.T) {
 		MaxIdle: 0,
 	}
 	var resetTotal int32
-	p := NewSimplePool(opt, func(ctx context.Context, need NewElementNeed) (Element, error) {
+	p := NewSimplePool(opt, func(ctx context.Context, need PoolPutter) (Element, error) {
 		return NewSimpleElement(&SimpleRawItem{
 			Raw: &userInfo{},
 			Reset: func(raw interface{}) {
@@ -471,7 +471,7 @@ func TestSimplePool_Get_BadEls(t *testing.T) {
 		MaxIdle: 50,
 	}
 	var id int32
-	p := NewSimplePool(opt, func(ctx context.Context, pool NewElementNeed) (Element, error) {
+	p := NewSimplePool(opt, func(ctx context.Context, pool PoolPutter) (Element, error) {
 		id++
 		return &testEL{id: id, p: pool, MetaInfo: NewMetaInfo()}, nil
 	})
@@ -527,7 +527,7 @@ func BenchmarkNewSimplePool(b *testing.B) {
 		MaxIdle: 1,
 	}
 	var resetTotal int32
-	p := NewSimplePool(opt, func(ctx context.Context, need NewElementNeed) (Element, error) {
+	p := NewSimplePool(opt, func(ctx context.Context, need PoolPutter) (Element, error) {
 		return NewSimpleElement(&SimpleRawItem{
 			Raw: &userInfo{},
 			Reset: func(raw interface{}) {

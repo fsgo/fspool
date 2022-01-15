@@ -13,56 +13,69 @@ import (
 	"time"
 )
 
-// Element 对象池的元素定义
-type Element interface {
-	// PEActive 判断元素是否有效
-	PEActive() error
+type (
+	// Element 对象池的元素定义
+	Element interface {
+		CanCheckActive
 
-	// PERawClose 元素最元素的 close
-	PERawClose() error
+		// PERawClose 元素最元素的 close
+		PERawClose() error
 
-	// Close 当前元素放回 pool 或者 销毁
-	Close() error
+		// Close 当前元素放回 pool 或者 销毁
+		Close() error
+	}
+
+	// CanCheckActive 支持检查对象是否有效
+	CanCheckActive interface {
+		PEActive() error
+	}
+
+	// CanReset 重置对象为初始化状态
+	CanReset interface {
+		PEReset()
+	}
+
+	// HasRaw 支持获取原始的对象
+	HasRaw interface {
+		PERaw() interface{}
+	}
+
+	// CanBindPool 将 pool 绑定到对象上
+	CanBindPool interface {
+		BindPool(p PoolPutter)
+	}
+
+	// CanSetError 设置错误
+	CanSetError interface {
+		SetError(err error)
+	}
+)
+
+// PoolPutter 创建新 Element 时所需要的
+type PoolPutter interface {
+	// Put 将对象重新放回对象池,
+	// 每使用 Get 方法拿到一个对象，就需要使用 Put 方法一次
+	// 在实现的过程中，可能将调用 Put 方法的调用放入获取值的 Close 方法的逻辑中
+	// 比如 ConnPool 的实现
+	Put(interface{}) error
+
+	// Option 连接池的配置信息
+	Option() Option
 }
 
-// PEActiver 对象是否有效
-type PEActiver interface {
-	PEActive() error
-}
+// NewElementFunc 生成新对象的方法
+type NewElementFunc func(context.Context, PoolPutter) (Element, error)
 
-// CanReset 重置对象为初始化状态
-type CanReset interface {
-	PEReset()
-}
-
-// HasRaw 支持获取原始的对象
-type HasRaw interface {
-	PERaw() interface{}
-}
-
-// CanBindPool bind element to pool
-type CanBindPool interface {
-	BindPool(p NewElementNeed)
-}
-
-// CanSetError 设置错误
-type CanSetError interface {
-	SetError(err error)
-}
-
-// NewElementFunc new element func
-type NewElementFunc func(context.Context, NewElementNeed) (Element, error)
-
-// NewSimplePool new pool
-func NewSimplePool(option *Option, newFunc NewElementFunc) SimplePool {
-	if option == nil {
-		option = &Option{}
+// NewSimplePool 创建一个新的对象池
+func NewSimplePool(opt *Option, newFunc NewElementFunc) SimplePool {
+	if opt == nil {
+		opt = &Option{}
 	}
 
 	p := &simplePool{
-		option:          *option,
+		option:          *opt,
 		newFunc:         newFunc,
-		idles:           make([]Element, 0, option.MaxIdle),
+		idles:           make([]Element, 0, opt.MaxIdle),
 		elementRequests: make(map[uint64]chan elementRequest),
 	}
 	return p
@@ -70,14 +83,30 @@ func NewSimplePool(option *Option, newFunc NewElementFunc) SimplePool {
 
 // SimplePool 一个简单的，通用的连接池
 type SimplePool interface {
+	// Get 从对象池中读取到一个对象，可能是新生成的也可能是旧的
+	// 不管对象在使用后，是正常还是异常，都必须调用 Close 方法，以将对象重新放回对象池
+	// 否则对象池的计算会不准确
 	Get(ctx context.Context) (io.Closer, error)
+
+	// Option 对象池的配置信息
 	Option() Option
+
+	// Stats 当前对象池的状态
 	Stats() Stats
+
+	// Range 遍历所有 idle 状态的对象
 	Range(func(io.Closer) error) error
+
+	// Close 关闭对象池
 	Close() error
 }
 
 var _ SimplePool = (*simplePool)(nil)
+
+type elementRequest struct {
+	el  Element
+	err error
+}
 
 // simplePool common pool from database.sql
 type simplePool struct {
@@ -90,9 +119,11 @@ type simplePool struct {
 	mu sync.Mutex
 
 	numOpen int // 已打开的
+	wait    int // 当前等待的数量
 
 	nextRequest uint64 // Next key to use in elementRequests.
 
+	// elementRequests 等待中的请求
 	elementRequests map[uint64]chan elementRequest
 
 	idles  []Element
@@ -117,7 +148,9 @@ func (p *simplePool) Option() Option {
 	return p.option
 }
 
-// Get get one from pool; from idle or create new
+// Get 从对象池中读取到一个对象，可能是新生成的也可能是旧的，
+// 不管对象在使用后，是正常还是异常，都必须调用 Close 方法，以将对象重新放回对象池，
+// 否则对象池的计算会不准确
 func (p *simplePool) Get(ctx context.Context) (io.Closer, error) {
 	var el Element
 	var err error
@@ -187,6 +220,7 @@ func (p *simplePool) selectOne(ctx context.Context) (el Element, err error) {
 		reqKey := p.nextRequestKeyLocked()
 		p.elementRequests[reqKey] = req
 		p.waitCount++
+		p.wait++
 		p.mu.Unlock()
 
 		waitStart := nowFunc()
@@ -198,6 +232,7 @@ func (p *simplePool) selectOne(ctx context.Context) (el Element, err error) {
 			// on it after removing.
 			p.mu.Lock()
 			delete(p.elementRequests, reqKey)
+			p.wait--
 			p.mu.Unlock()
 
 			atomic.AddInt64(&p.waitDuration, int64(time.Since(waitStart)))
@@ -212,6 +247,9 @@ func (p *simplePool) selectOne(ctx context.Context) (el Element, err error) {
 			return nil, ctx.Err()
 		case ret, ok := <-req:
 			atomic.AddInt64(&p.waitDuration, int64(time.Since(waitStart)))
+			p.mu.Lock()
+			p.wait--
+			p.mu.Unlock()
 
 			if !ok {
 				return nil, ErrClosedPool
@@ -320,11 +358,6 @@ func (p *simplePool) putElement(dc Element, err error) {
 		dc.PERawClose()
 		return
 	}
-}
-
-type elementRequest struct {
-	el  Element
-	err error
 }
 
 func (p *simplePool) newElement(ctx context.Context) (el Element, err error) {
@@ -437,6 +470,7 @@ func (p *simplePool) elementCleaner(d time.Duration) {
 	}
 }
 
+// elementCleanerRunLocked 从 idle 列表中，找到过期的、失效的元素
 func (p *simplePool) elementCleanerRunLocked() (closing []Element) {
 	if p.option.MaxLifeTime > 0 || p.option.MaxIdleTime > 0 {
 		for i := 0; i < len(p.idles); i++ {
@@ -468,7 +502,7 @@ func (p *simplePool) maxIdleElementsLocked() int {
 
 // Stats get pool stats
 func (p *simplePool) Stats() Stats {
-	wait := atomic.LoadInt64(&p.waitDuration)
+	waitTime := atomic.LoadInt64(&p.waitDuration)
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -478,10 +512,11 @@ func (p *simplePool) Stats() Stats {
 
 		Idle:    len(p.idles),
 		NumOpen: p.numOpen,
+		Wait:    p.wait,
 		InUse:   p.numOpen - len(p.idles),
 
 		WaitCount:         p.waitCount,
-		WaitDuration:      time.Duration(wait),
+		WaitDuration:      time.Duration(waitTime),
 		MaxIdleClosed:     p.maxIdleClosed,
 		MaxIdleTimeClosed: p.maxIdleTimeClosed,
 		MaxLifeTimeClosed: p.maxLifetimeClosed,
@@ -519,6 +554,7 @@ func (p *simplePool) Close() error {
 	return err
 }
 
+// Range 遍历所有 idle 状态的对象
 func (p *simplePool) Range(fn func(el io.Closer) error) (err error) {
 	p.mu.Lock()
 	for _, el := range p.idles {
@@ -567,7 +603,7 @@ type elementTPL struct {
 	err error
 	*MetaInfo
 	item   *SimpleRawItem
-	pool   NewElementNeed
+	pool   PoolPutter
 	rw     sync.RWMutex
 	closed bool
 }
@@ -591,7 +627,7 @@ func (elt *elementTPL) isClosed() bool {
 	return d
 }
 
-func (elt *elementTPL) BindPool(p NewElementNeed) {
+func (elt *elementTPL) BindPool(p PoolPutter) {
 	elt.pool = p
 }
 

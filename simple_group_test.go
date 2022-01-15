@@ -22,7 +22,7 @@ func TestNewSimpleGroup(t *testing.T) {
 		atomic.StoreInt32(&id, 0)
 	}
 	newFunc := func(key interface{}) NewElementFunc {
-		return func(ctx context.Context, pool NewElementNeed) (Element, error) {
+		return func(ctx context.Context, pool PoolPutter) (Element, error) {
 			v := atomic.AddInt32(&id, 1)
 			item := &testEL{
 				id:       v,

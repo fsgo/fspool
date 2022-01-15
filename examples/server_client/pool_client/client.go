@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"net/http"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -19,14 +20,16 @@ import (
 	"github.com/fsgo/fspool"
 )
 
-var p fspool.ConnPool
+var pool fspool.ConnPool
 
-var serverAddr = flag.String("addr", "127.0.0.1:8019", "server addr")
+var serverAddr = flag.String("server", "127.0.0.1:8019", "server addr")
+var lAddr = flag.String("addr", "0.0.0.0:8020", "http server for client status api")
 var optMaxOpen = flag.Int("max_open", 10, "MaxOpen")
 var optMaxIdle = flag.Int("max_idle", 10, "MaxIdle")
-var optMaxLifeTime = flag.Int("max_life_time", 60, "MaxLifeTime s")
-var optMaxIdleTime = flag.Int("max_idle_time", 60, "MaxIdleTime s")
-var workerTotal = flag.Int("worker", 10, "client worker total")
+var connectTimeout = flag.Int("ctimeout", 10, "connect timeout, ms")
+var optMaxLifeTime = flag.Int("max_life_time", 30, "MaxLifeTime, second")
+var optMaxIdleTime = flag.Int("max_idle_time", 30, "MaxIdleTime, second")
+var workerTotal = flag.Int("worker", 11, "client worker total")
 
 var workerStatus = map[int]time.Time{}
 var mu sync.Mutex
@@ -41,7 +44,30 @@ func main() {
 
 	go printStatus()
 
+	startHTTPServer()
+
 	select {}
+}
+
+func startHTTPServer() {
+	l, err := net.Listen("tcp", *lAddr)
+	if err != nil {
+		log.Fatalln(err.Error())
+	}
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		info := map[string]interface{}{
+			"Pool": pool.Stats(),
+		}
+		bf, err := json.Marshal(info)
+		if err != nil {
+			w.WriteHeader(500)
+			w.Write([]byte(err.Error()))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(bf)
+	})
+	go http.Serve(l, h)
 }
 
 func initPool() {
@@ -54,19 +80,16 @@ func initPool() {
 
 	var totalConn int64
 
-	p = fspool.NewConnPool(opt, func(ctx context.Context) (net.Conn, error) {
-		if _, ok := ctx.Deadline(); !ok {
-			var cancel context.CancelFunc
-			ctx, cancel = context.WithTimeout(ctx, time.Second)
-			defer cancel()
-		}
+	pool = fspool.NewConnPool(opt, func(ctx context.Context) (net.Conn, error) {
+		ctx, cancel := context.WithTimeout(ctx, time.Millisecond*time.Duration(*connectTimeout))
+		defer cancel()
 		atomic.AddInt64(&totalConn, 1)
 		return (&net.Dialer{}).DialContext(ctx, "tcp", *serverAddr)
 	})
 
 	go func() {
 		for range time.NewTicker(time.Minute).C {
-			st := p.Stats()
+			st := pool.Stats()
 			log.Println(
 				"pool.Stats=", st,
 				"totalConn=", atomic.LoadInt64(&totalConn),
@@ -96,7 +119,7 @@ func worker(id int) {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 		defer cancel()
 
-		conn, err := p.Get(ctx)
+		conn, err := pool.Get(ctx)
 		if err != nil {
 			plog("get_fail", err)
 			return

@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"flag"
 	"log"
+	"math/rand"
 	"net"
 	"sync/atomic"
 	"time"
@@ -84,6 +85,12 @@ func serverHandler(conn net.Conn) {
 		if err != nil {
 			break
 		}
+
+		if rand.Intn(100000) == 1 {
+			conn.Close()
+			break
+		}
+
 		out := bytes.ToUpper(line)
 		_, err = conn.Write(append(out, '\n'))
 		if err != nil {
@@ -94,6 +101,15 @@ func serverHandler(conn net.Conn) {
 		if loopID%10000 == 9999 {
 			printLog("ok99")
 		}
-	}
 
+		if loopID == 100000 {
+			// server 主动关闭
+			conn.Close()
+			break
+		}
+	}
+}
+
+func init() {
+	rand.Seed(time.Now().Unix())
 }
