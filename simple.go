@@ -38,19 +38,24 @@ type PEActiver interface {
 	PEActive() error
 }
 
-// PEReseter reset it
-type PEReseter interface {
+// CanReset reset it
+type CanReset interface {
 	PEReset()
 }
 
-// PERaw raw value
-type PERaw interface {
+// HasRaw raw value
+type HasRaw interface {
 	Raw() interface{}
 }
 
-// PEBindPool bind element to pool
-type PEBindPool interface {
+// CanBindPool bind element to pool
+type CanBindPool interface {
 	BindPool(p NewElementNeed)
+}
+
+// CanSetError 设置错误
+type CanSetError interface {
+	SetError(err error)
 }
 
 // NewElementFunc new element func
@@ -154,7 +159,7 @@ func (p *simplePool) selectOne(ctx context.Context) (el Element, err error) {
 	p.mu.Lock()
 	if p.closed {
 		p.mu.Unlock()
-		return nil, ErrClosed
+		return nil, ErrClosedPool
 	}
 
 	// Check if the context is expired.
@@ -215,7 +220,7 @@ func (p *simplePool) selectOne(ctx context.Context) (el Element, err error) {
 			atomic.AddInt64(&p.waitDuration, int64(time.Since(waitStart)))
 
 			if !ok {
-				return nil, ErrClosed
+				return nil, ErrClosedPool
 			}
 			if ret.err == nil {
 				if ea := ret.el.PEActive(); ea != nil {
@@ -276,7 +281,7 @@ func (p *simplePool) putElement(dc Element, err error) {
 		return
 	}
 
-	if item, ok := dc.(PEReseter); ok {
+	if item, ok := dc.(CanReset); ok {
 		item.PEReset()
 	}
 
@@ -329,7 +334,7 @@ type elementRequest struct {
 func (p *simplePool) newElement(ctx context.Context) (el Element, err error) {
 	el, err = p.newFunc(ctx, p)
 	if el != nil {
-		if b, ok := el.(PEBindPool); ok {
+		if b, ok := el.(CanBindPool); ok {
 			b.BindPool(p)
 		}
 
@@ -560,85 +565,120 @@ func NewSimpleElement(item *SimpleRawItem) Element {
 
 var _ SimpleElement = (*elementTPL)(nil)
 var _ Element = (*elementTPL)(nil)
-var _ PEBindPool = (*elementTPL)(nil)
+var _ CanBindPool = (*elementTPL)(nil)
 
 type elementTPL struct {
 	err error
 	*MetaInfo
-	item *SimpleRawItem
-	pool NewElementNeed
-	rw   sync.RWMutex
+	item   *SimpleRawItem
+	pool   NewElementNeed
+	rw     sync.RWMutex
+	closed bool
 }
 
-func (e *elementTPL) BindPool(p NewElementNeed) {
-	e.pool = p
+func (elt *elementTPL) cloneElementTPL() *elementTPL {
+	elt.rw.RLock()
+	cp := &elementTPL{
+		err:      elt.err,
+		item:     elt.item,
+		pool:     elt.pool,
+		MetaInfo: elt.MetaInfo.cloneMeta(),
+	}
+	elt.rw.RUnlock()
+	return cp
 }
 
-func (e *elementTPL) Raw() interface{} {
-	return e.item.Raw
+func (elt *elementTPL) isClosed() bool {
+	elt.rw.RLock()
+	d := elt.closed
+	elt.rw.RUnlock()
+	return d
 }
 
-func (e *elementTPL) PEReset() {
-	if e.item.Reset != nil {
-		e.item.Reset(e.item.Raw)
+func (elt *elementTPL) BindPool(p NewElementNeed) {
+	elt.pool = p
+}
+
+func (elt *elementTPL) Raw() interface{} {
+	if elt.isClosed() {
+		return nil
+	}
+	return elt.item.Raw
+}
+
+func (elt *elementTPL) PEReset() {
+	if elt.isClosed() {
+		return
+	}
+	if elt.item.Reset != nil {
+		elt.item.Reset(elt.item.Raw)
 	}
 }
 
-func (e *elementTPL) PEActive() error {
+func (elt *elementTPL) PEActive() error {
+	if elt.isClosed() {
+		return ErrClosedValue
+	}
 	var err error
-	e.rw.RLock()
-	err = e.err
-	e.rw.RUnlock()
+	elt.rw.RLock()
+	err = elt.err
+	elt.rw.RUnlock()
 
 	if err != nil {
 		return err
 	}
-	if err = e.MetaInfo.Active(e.pool.Option()); err != nil {
+	if err = elt.MetaInfo.Active(elt.pool.Option()); err != nil {
 		return err
 	}
-	if e.item.CheckActive != nil {
-		return e.item.CheckActive(e.item.Raw)
+	if elt.item.CheckActive != nil {
+		return elt.item.CheckActive(elt.item.Raw)
 	}
 	return nil
 }
 
-func (e *elementTPL) PERawClose() error {
-	if e.item.Close != nil {
-		return e.item.Close(e.item.Raw)
+func (elt *elementTPL) PERawClose() error {
+	if elt.isClosed() {
+		return ErrClosedValue
+	}
+	if elt.item.Close != nil {
+		return elt.item.Close(elt.item.Raw)
 	}
 
-	if cr, ok := e.item.Raw.(io.Closer); ok {
+	if cr, ok := elt.item.Raw.(io.Closer); ok {
 		return cr.Close()
 	}
 	return nil
 }
 
-func (e *elementTPL) Close() error {
-	return e.pool.Put(e)
+func (elt *elementTPL) Close() error {
+	elt.rw.Lock()
+	closed := elt.closed
+	elt.closed = true
+	elt.rw.Unlock()
+
+	if closed {
+		return ErrClosedValue
+	}
+	return elt.pool.Put(elt.cloneElementTPL())
 }
 
-func (e *elementTPL) SetError(err error) {
+func (elt *elementTPL) SetError(err error) {
 	if err == nil {
 		return
 	}
-	e.rw.Lock()
-	e.err = err
-	e.rw.Unlock()
-}
-
-// SetError 设置错误
-type SetError interface {
-	SetError(err error)
+	elt.rw.Lock()
+	elt.err = err
+	elt.rw.Unlock()
 }
 
 // TrySetError 尝试设置错误，若设置成功返回 true,否则返回 false
 //
-// obj 必须实现了 SetError:
-// 	type SetError interface {
-// 		SetError(err error)
+// obj 必须实现了 CanSetError:
+// 	type CanSetError interface {
+// 		CanSetError(err error)
 // 	}
 func TrySetError(obj interface{}, err error) bool {
-	if se, ok := obj.(SetError); ok {
+	if se, ok := obj.(CanSetError); ok {
 		se.SetError(err)
 		return true
 	}
@@ -647,12 +687,12 @@ func TrySetError(obj interface{}, err error) bool {
 
 // MustSetError 设置错误,若失败会 panic
 //
-// obj 必须实现了 SetError:
-// 	type SetError interface {
-// 		SetError(err error)
+// obj 必须实现了 CanSetError:
+// 	type CanSetError interface {
+// 		CanSetError(err error)
 // 	}
 func MustSetError(obj interface{}, err error) {
 	if !TrySetError(obj, err) {
-		panic(fmt.Sprintf("SetError failed, %T not implement SetError interface", obj))
+		panic(fmt.Sprintf("CanSetError failed, %T not implement CanSetError interface", obj))
 	}
 }

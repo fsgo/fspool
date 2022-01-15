@@ -4,6 +4,7 @@
 
 // https://github.com/go-sql-driver/mysql/blob/master/conncheck.go
 
+//go:build linux || darwin || dragonfly || freebsd || netbsd || openbsd || solaris || illumos
 // +build linux darwin dragonfly freebsd netbsd openbsd solaris illumos
 
 package fspool
@@ -16,8 +17,12 @@ import (
 )
 
 var errUnexpectedRead = errors.New("unexpected read from socket")
+var errConnNil = errors.New("conn is nil")
 
 func connCheck(conn net.Conn) error {
+	if conn == nil {
+		return errConnNil
+	}
 	var sysErr error
 
 	sysConn, ok := conn.(syscall.Conn)

@@ -1,5 +1,5 @@
-// Copyright(C) 2021 github.com/hidu  All Rights Reserved.
-// Author: hidu (duv123+git@baidu.com)
+// Copyright(C) 2021 github.com/fsgo  All Rights Reserved.
+// Author: fsgo
 // Date: 2021/3/21
 
 package fspool
@@ -13,6 +13,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
 var _ Element = (*testEL)(nil)
@@ -102,17 +104,13 @@ func TestNewSimple(t *testing.T) {
 			for i := 1; i < 1000; i++ {
 				t.Run(fmt.Sprintf("for_%d", i), func(t *testing.T) {
 					val, err := p.Get(context.Background())
-					if err != nil {
-						t.Fatalf("has error: %v", err)
-					}
+					require.NoError(t, err)
 					defer val.Close()
 
 					v := val.(*testEL)
 					got := v.ID()
 					want := getWant(i)
-					if got != want {
-						t.Fatalf("got=%v want=%v", got, want)
-					}
+					require.Equal(t, want, got)
 				})
 			}
 		})
@@ -140,9 +138,7 @@ func TestNewSimple(t *testing.T) {
 			}()
 		}
 		wg.Wait()
-		if got != want {
-			t.Fatalf("got=%v want=%v", got, want)
-		}
+		require.Equal(t, want, got)
 	}
 
 	t.Run("case 1-default values", func(t *testing.T) {
@@ -198,9 +194,7 @@ func TestNewSimple(t *testing.T) {
 
 		t.Run("slow", func(t *testing.T) {
 			el, errGet := p.Get(context.Background())
-			if errGet != nil {
-				t.Fatalf("unexpect error:%v", errGet)
-			}
+			require.NoError(t, errGet)
 
 			// 由于 MaxOpen=1 所以不能正常的获取到 元素
 			t.Run("timeout", func(t *testing.T) {
@@ -210,9 +204,7 @@ func TestNewSimple(t *testing.T) {
 						defer cancel()
 						_, err2 := p.Get(ctx)
 						want := context.DeadlineExceeded
-						if err2 != want {
-							t.Fatalf("err got=%v want=%v", err2, want)
-						}
+						require.Equal(t, want, err2)
 					})
 				}
 			})
@@ -224,9 +216,7 @@ func TestNewSimple(t *testing.T) {
 				ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
 				defer cancel()
 				el2, err2 := p.Get(ctx)
-				if err2 != nil {
-					t.Fatalf("unexpect error=%v", err2)
-				}
+				require.NoError(t, err2)
 				defer el2.Close()
 			})
 
@@ -303,21 +293,15 @@ func testSimplePoolClose(t *testing.T, p SimplePool) {
 	sp := p.(*simplePool)
 
 	t.Run("Close", func(t *testing.T) {
-		if err := p.Close(); err != nil {
-			t.Fatalf("Close() has error=%v", err)
-		}
+		require.NoError(t, p.Close())
 
 		if got := len(sp.idles); got > 0 {
 			t.Fatalf("len(sp.idles)=%v want=0", got)
 		}
 
 		el, err := p.Get(context.Background())
-		if err == nil {
-			t.Fatalf("expect not nil")
-		}
-		if el != nil {
-			t.Fatalf("expect nil")
-		}
+		require.Error(t, err)
+		require.Nil(t, el)
 	})
 }
 
@@ -385,9 +369,7 @@ func TestSimplePool_Close(t *testing.T) {
 
 			for i := 0; i < 5; i++ {
 				item, err = p.Get(context.Background())
-				if err != nil {
-					t.Fatalf(err.Error())
-				}
+				require.NoError(t, err)
 				// close it after pool closed
 				closers = append(closers, item.Close)
 			}
@@ -397,18 +379,13 @@ func TestSimplePool_Close(t *testing.T) {
 				t.Logf("meta=%s", m.String())
 				return nil
 			})
-			if err != nil {
-				t.Fatalf(err.Error())
-			}
+			require.NoError(t, err)
 
 			sp := p.(*simplePool)
 
 			for i := 0; i < 2; i++ {
 				testSimplePoolClose(t, p)
-
-				if got := len(sp.idles); got != 0 {
-					t.Fatalf("len(sp.idles)=%d, want=%d", got, 0)
-				}
+				require.Equal(t, 0, len(sp.idles))
 			}
 
 			for _, closeFn := range closers {
@@ -418,9 +395,7 @@ func TestSimplePool_Close(t *testing.T) {
 			mu.Lock()
 			got := len(closed)
 			mu.Unlock()
-			if got != tt.wantClosed {
-				t.Fatalf("closed=%d want=%d", got, tt.wantClosed)
-			}
+			require.Equal(t, tt.wantClosed, got)
 		})
 	}
 }
@@ -446,30 +421,23 @@ func TestNewSimpleElement(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		t.Run(fmt.Sprintf("id=%d", i), func(t *testing.T) {
 			item, err := p.Get(context.Background())
-			if err != nil {
-				t.Fatalf(err.Error())
-			}
+			require.NoError(t, err)
+
 			val := item.(SimpleElement)
 			defer val.Close()
 			user := val.Raw().(*userInfo)
 
-			if got := user.num; got != 0 {
-				t.Fatalf("user.num=%d want=%d", got, 0)
-			}
+			require.Equal(t, 0, user.num)
 			user.num = i + 10
 			_ = user
 
 			meta := ReadMeta(val)
 			wantID := uint64(i) + 1
 			gotID := meta.ID
-			if gotID != wantID {
-				t.Fatalf("gotID=%d wantID=%d", gotID, wantID)
-			}
+			require.Equal(t, wantID, gotID)
 
 			resetWant := int32(i)
-			if resetWant != resetTotal {
-				t.Fatalf("resetTotal=%d want=%d", resetTotal, resetWant)
-			}
+			require.Equal(t, resetWant, resetTotal)
 		})
 	}
 
@@ -480,10 +448,7 @@ func TestMustSetError(t *testing.T) {
 		item := &pConn{}
 		err := fmt.Errorf("err")
 		MustSetError(item, err)
-		got := item.PEActive()
-		if got != err {
-			t.Fatalf("PEActive got=%v want=%v", got, err)
-		}
+		require.Error(t, item.PEActive())
 	})
 
 	t.Run("case 2-panic", func(t *testing.T) {
@@ -542,19 +507,15 @@ func TestSimplePool_Get_BadEls(t *testing.T) {
 
 	t.Run("get one", func(t *testing.T) {
 		el, err := p.Get(context.Background())
-		if err != nil {
-			t.Fatalf(err.Error())
-		}
+		require.NoError(t, err)
+
 		got := el.(*testEL).ID()
 		want := int32(opt.MaxOpen) + 1
-		if got != want {
-			t.Fatalf("testEL.ID()=%d want=%d", got, want)
-		}
+		require.Equal(t, want, got)
+
 		gotIdle := len(rowPool.idles)
 		wantIdle := 0
-		if gotIdle != wantIdle {
-			t.Fatalf("got idles=%v want=%v", gotIdle, wantIdle)
-		}
+		require.Equal(t, wantIdle, gotIdle)
 	})
 }
 
@@ -579,9 +540,7 @@ func BenchmarkNewSimplePool(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		item, err := p.Get(context.Background())
-		if err != nil {
-			b.Fatalf(err.Error())
-		}
+		require.NoError(b, err)
 		item.Close()
 	}
 

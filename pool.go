@@ -1,5 +1,5 @@
-// Copyright(C) 2021 github.com/hidu  All Rights Reserved.
-// Author: hidu (duv123+git@baidu.com)
+// Copyright(C) 2021 github.com/fsgo  All Rights Reserved.
+// Author: fsgo
 // Date: 2021/3/21
 
 package fspool
@@ -23,11 +23,14 @@ var ErrOutOfMaxIdle = errors.New("out of max idle")
 // ErrOutOfMaxIdleTime out of max idle time
 var ErrOutOfMaxIdleTime = errors.New("out of max idle time")
 
+// ErrClosedPool 对象池已关闭
+var ErrClosedPool = errors.New("pool already closed")
+
+// ErrClosedValue value 被多次 close
+var ErrClosedValue = errors.New("pool value already closed")
+
 // nowFunc returns the current time; it's overridden in tests.
 var nowFunc = time.Now
-
-// ErrClosed 对象池已关闭
-var ErrClosed = errors.New("pool already closed")
 
 // Pool 通用的 Pool 接口定义
 type Pool interface {

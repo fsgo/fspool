@@ -7,6 +7,8 @@ package fspool_test
 import (
 	"context"
 	"fmt"
+	"net"
+	"time"
 
 	"github.com/fsgo/fspool"
 )
@@ -34,7 +36,7 @@ func ExampleNewSimplePool() {
 		if err != nil {
 			panic(err.Error())
 		}
-		u := item.(fspool.PERaw).Raw().(*userInfo)
+		u := item.(fspool.HasRaw).Raw().(*userInfo)
 		fmt.Println("user.num=", u.num)
 		fmt.Println("user.used=", u.used)
 
@@ -50,5 +52,42 @@ func ExampleNewSimplePool() {
 	// user.used= 1
 	// user.num= 0
 	// user.used= 2
+}
 
+func ExampleNewConnPool() {
+	opt := &fspool.Option{
+		MaxOpen:     10,
+		MaxIdle:     5,
+		MaxIdleTime: time.Minute,
+		MaxLifeTime: 10 * time.Minute,
+	}
+	dz := &net.Dialer{}
+
+	fn := func(ctx context.Context) (net.Conn, error) {
+		return dz.DialContext(ctx, "tcp", "www.example.com:80")
+	}
+	cp := fspool.NewConnPool(opt, fn)
+
+	fetch := func(ctx context.Context, msg string) (string, error) {
+		ctx, cancel := context.WithTimeout(ctx, time.Second)
+		defer cancel()
+		// 从连接池获取一个连接
+		conn, err := cp.Get(ctx)
+		if err != nil {
+			return "", err
+		}
+		// 使用完了，关闭连接(连接放回连接池)
+		defer conn.Close()
+
+		if _, err = conn.Write([]byte(msg)); err != nil {
+			return "", err
+		}
+		bf := make([]byte, 1024)
+		n, err := conn.Read(bf)
+		if err != nil {
+			return "", err
+		}
+		return string(bf[:n]), nil
+	}
+	_ = fetch
 }

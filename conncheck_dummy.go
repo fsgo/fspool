@@ -4,6 +4,7 @@
 
 // https://github.com/go-sql-driver/mysql/blob/master/conncheck_dummy.go
 
+//go:build !linux && !darwin && !dragonfly && !freebsd && !netbsd && !openbsd && !solaris && !illumos
 // +build !linux,!darwin,!dragonfly,!freebsd,!netbsd,!openbsd,!solaris,!illumos
 
 package fspool

@@ -1,5 +1,5 @@
-// Copyright(C) 2021 github.com/hidu  All Rights Reserved.
-// Author: hidu (duv123+git@baidu.com)
+// Copyright(C) 2021 github.com/fsgo  All Rights Reserved.
+// Author: fsgo
 // Date: 2021/3/23
 
 package fspool
@@ -7,11 +7,12 @@ package fspool
 import (
 	"context"
 	"fmt"
-	"reflect"
 	"runtime"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestNewSimpleGroup(t *testing.T) {
@@ -56,20 +57,14 @@ func TestNewSimpleGroup(t *testing.T) {
 		for i := 0; i < 100; i++ {
 			t.Run(fmt.Sprintf("for_%d", i), func(t *testing.T) {
 				v, err := pg.Get(context.Background(), key)
-				if err != nil {
-					t.Fatalf("unexpect error: %v", err)
-				}
+				require.NoError(t, err)
+
 				el := v.(*testEL)
 				defer el.Close()
 
-				if got := el.Name(); got != key {
-					t.Fatalf("el.Name()=%v want=%v", got, key)
-				}
-
+				require.Equal(t, key, el.Name())
 				wantID := int32(i) + 1
-				if got := el.ID(); got != wantID {
-					t.Fatalf("el.ID()=%v want=%v", got, wantID)
-				}
+				require.Equal(t, wantID, el.ID())
 			})
 
 			t.Run("Stats", func(t *testing.T) {
@@ -82,25 +77,18 @@ func TestNewSimpleGroup(t *testing.T) {
 					MaxIdleClosed: int64(i) + 1,
 				}
 
-				if !reflect.DeepEqual(got, want) {
-					t.Fatalf("\ngot =%v,\nwant=%v", got, want)
-				}
+				require.Equal(t, want, got)
 			})
 
 			t.Run("pool_size", func(t *testing.T) {
-				want := 1
-				if got := len(pg.pools); got != want {
-					t.Fatalf("len(pg.pools)=%d want=%d", got, want)
-				}
+				require.Equal(t, 1, len(pg.pools))
 			})
 
 			pg.doCheckExpire()
 		}
 
 		t.Run("close", func(t *testing.T) {
-			if err := pg.Close(); err != nil {
-				t.Fatalf("pg.Close() unexpect error+%v", err)
-			}
+			require.NoError(t, pg.Close())
 		})
 	})
 }

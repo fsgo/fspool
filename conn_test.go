@@ -1,19 +1,19 @@
-// Copyright(C) 2021 github.com/hidu  All Rights Reserved.
-// Author: hidu (duv123+git@baidu.com)
+// Copyright(C) 2021 github.com/fsgo  All Rights Reserved.
+// Author: fsgo
 // Date: 2021/3/23
 
 package fspool
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"fmt"
 	"net"
-	"reflect"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
 type testConnServer struct {
@@ -68,9 +68,7 @@ func TestNewConnPool(t *testing.T) {
 	defer cancel()
 
 	l, errListen := net.Listen("tcp", "127.0.0.1:0")
-	if errListen != nil {
-		t.Fatalf("Listen error %v", errListen)
-	}
+	require.NoError(t, errListen)
 
 	go func() {
 		_ = ts.Serve(ctx, l)
@@ -92,9 +90,7 @@ func TestNewConnPool(t *testing.T) {
 		for i := 0; i < 10; i++ {
 			t.Run(fmt.Sprintf("for_%d", i), func(t *testing.T) {
 				conn, errGet := cp.Get(context.Background())
-				if errGet != nil {
-					t.Fatalf("cp.Get unexpect error %v", errGet)
-				}
+				require.NoError(t, errGet)
 
 				// todo check it
 				_ = ReadMeta(conn)
@@ -103,41 +99,32 @@ func TestNewConnPool(t *testing.T) {
 
 				sendContent := []byte(fmt.Sprintf("loop %d", i))
 
-				{
-					_ = conn.SetWriteDeadline(time.Now().Add(time.Second))
+				t.Run("write", func(t *testing.T) {
+					require.NoError(t, conn.SetWriteDeadline(time.Now().Add(time.Second)))
 					wrote, errWrite := conn.Write(append(sendContent, '\n'))
-					_ = conn.SetWriteDeadline(time.Time{})
-
 					t.Logf("conn.Write %d %v", wrote, errWrite)
-					if errWrite != nil {
-						t.Fatalf("pConn.Write unexpect error %v", errWrite)
-					}
-				}
+					require.NoError(t, errWrite)
+					require.NoError(t, conn.SetWriteDeadline(time.Time{}))
+				})
 
-				{
-					_ = conn.SetReadDeadline(time.Now().Add(time.Second))
+				t.Run("read", func(t *testing.T) {
+					require.NoError(t, conn.SetReadDeadline(time.Now().Add(time.Second)))
 					rd := bufio.NewReader(conn)
 					gotLine, _, errRead := rd.ReadLine()
-					_ = conn.SetReadDeadline(time.Time{})
+					t.Logf("rd.ReadLine() %q err=%v", gotLine, errRead)
+					require.NoError(t, errRead)
+					require.NoError(t, conn.SetReadDeadline(time.Time{}))
 
-					t.Logf("rd.ReadLine()=%q", gotLine)
+					require.Equal(t, string(sendContent), string(gotLine))
+				})
 
-					if errRead != nil {
-						t.Fatalf("rd.ReadLine() unexpect error %v", errRead)
-					}
-					if !bytes.Equal(gotLine, sendContent) {
-						t.Fatalf("rd.ReadLine()=%q sendContent=%q", gotLine, sendContent)
-					}
-				}
+				t.Run("getConnecting", func(t *testing.T) {
+					require.Equal(t, 1, ts.getConnecting())
+				})
 
-				{
-					want := 1
-					if got := ts.getConnecting(); got != want {
-						t.Fatalf("ts.getConnecting()=%d sendContent=%d", got, want)
-					}
-				}
-
-				_ = conn.Close()
+				t.Run("close", func(t *testing.T) {
+					require.NoError(t, conn.Close())
+				})
 
 				t.Run("stats", func(t *testing.T) {
 					got := cp.Stats()
@@ -147,12 +134,9 @@ func TestNewConnPool(t *testing.T) {
 						InUse:   0,
 						Idle:    1,
 					}
-					if !reflect.DeepEqual(got, want) {
-						t.Fatalf("cp.Stats()=%s \n\t\t\t want=%s", got, want)
-					}
+					require.Equal(t, want, got)
 				})
 			})
 		}
 	})
-
 }

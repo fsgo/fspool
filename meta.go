@@ -1,5 +1,5 @@
-// Copyright(C) 2021 github.com/hidu  All Rights Reserved.
-// Author: hidu (duv123+git@baidu.com)
+// Copyright(C) 2021 github.com/fsgo  All Rights Reserved.
+// Author: fsgo
 // Date: 2021/4/12
 
 package fspool
@@ -74,6 +74,13 @@ func (w *MetaInfo) PEMeta() Meta {
 	m := *w.meta
 	w.mu.Unlock()
 	return m
+}
+
+func (w *MetaInfo) cloneMeta() *MetaInfo {
+	m := w.PEMeta()
+	return &MetaInfo{
+		meta: &m,
+	}
 }
 
 // Meta 元信息

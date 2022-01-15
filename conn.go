@@ -1,5 +1,5 @@
-// Copyright(C) 2021 github.com/hidu  All Rights Reserved.
-// Author: hidu (duv123+git@baidu.com)
+// Copyright(C) 2021 github.com/fsgo  All Rights Reserved.
+// Author: fsgo
 // Date: 2021/3/21
 
 package fspool
@@ -100,21 +100,41 @@ func newPConn(raw net.Conn, p NewElementNeed) *pConn {
 }
 
 var _ net.Conn = (*pConn)(nil)
-var _ SetError = (*pConn)(nil)
+var _ CanSetError = (*pConn)(nil)
 var _ Element = (*pConn)(nil)
 
 type pConn struct {
 	*MetaInfo
 
-	pool NewElementNeed
-
-	raw net.Conn
-
-	mu      sync.RWMutex
+	pool    NewElementNeed
 	lastErr error
+	raw     net.Conn
+
+	mu sync.RWMutex
 
 	readStat  uint8
 	writeStat uint8
+
+	closed bool
+}
+
+func (c *pConn) isClosed() bool {
+	c.mu.RLock()
+	d := c.closed
+	c.mu.RUnlock()
+	return d
+}
+
+func (c *pConn) clonePConn() *pConn {
+	c.mu.RLock()
+	d := &pConn{
+		MetaInfo: c.MetaInfo.cloneMeta(),
+		pool:     c.pool,
+		raw:      c.raw,
+		lastErr:  c.lastErr,
+	}
+	c.mu.RUnlock()
+	return d
 }
 
 func (c *pConn) SetError(err error) {
@@ -126,6 +146,9 @@ func (c *pConn) SetError(err error) {
 }
 
 func (c *pConn) Read(b []byte) (n int, err error) {
+	if c.isClosed() {
+		return 0, ErrClosedValue
+	}
 	c.withLock(func() {
 		c.readStat = statStart
 	})
@@ -138,6 +161,9 @@ func (c *pConn) Read(b []byte) (n int, err error) {
 }
 
 func (c *pConn) Write(b []byte) (n int, err error) {
+	if c.isClosed() {
+		return 0, ErrClosedValue
+	}
 	c.withLock(func() {
 		c.writeStat = statStart
 	})
@@ -150,18 +176,28 @@ func (c *pConn) Write(b []byte) (n int, err error) {
 }
 
 func (c *pConn) PEReset() {
-	_ = c.SetDeadline(time.Time{})
-	_ = c.SetReadDeadline(time.Time{})
-	_ = c.SetWriteDeadline(time.Time{})
-
+	if c.isClosed() {
+		return
+	}
 	c.withLock(func() {
 		c.readStat = statInit
 		c.writeStat = statInit
 	})
+	_ = c.SetDeadline(time.Time{})
+	_ = c.SetReadDeadline(time.Time{})
+	_ = c.SetWriteDeadline(time.Time{})
 }
 
 func (c *pConn) Close() error {
-	return c.pool.Put(c)
+	var closed bool
+	c.withLock(func() {
+		closed = c.closed
+		c.closed = true
+	})
+	if closed {
+		return ErrClosedValue
+	}
+	return c.pool.Put(c.clonePConn())
 }
 
 func (c *pConn) LocalAddr() net.Addr {
@@ -173,18 +209,27 @@ func (c *pConn) RemoteAddr() net.Addr {
 }
 
 func (c *pConn) SetDeadline(t time.Time) error {
+	if c.isClosed() {
+		return ErrClosedValue
+	}
 	err := c.raw.SetDeadline(t)
 	c.SetError(err)
 	return err
 }
 
 func (c *pConn) SetReadDeadline(t time.Time) error {
+	if c.isClosed() {
+		return ErrClosedValue
+	}
 	err := c.raw.SetReadDeadline(t)
 	c.SetError(err)
 	return err
 }
 
 func (c *pConn) SetWriteDeadline(t time.Time) error {
+	if c.isClosed() {
+		return ErrClosedValue
+	}
 	err := c.raw.SetWriteDeadline(t)
 	c.SetError(err)
 	return err
@@ -201,14 +246,24 @@ func (c *pConn) isDoing() bool {
 }
 
 func (c *pConn) Raw() net.Conn {
+	if c.isClosed() {
+		return nil
+	}
 	return c.raw
 }
 
 func (c *pConn) PERawClose() error {
+	if c.isClosed() {
+		return ErrClosedValue
+	}
 	return c.raw.Close()
 }
 
 func (c *pConn) PEActive() error {
+	if c.isClosed() {
+		return ErrClosedValue
+	}
+
 	c.mu.RLock()
 
 	if c.lastErr != nil {
