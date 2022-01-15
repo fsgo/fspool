@@ -78,7 +78,7 @@ func initPool() {
 func worker(id int) {
 	var index int64
 
-	var meta fspool.Meta
+	var meta *fspool.Meta
 
 	plog := func(name string, err error) {
 		log.Println(

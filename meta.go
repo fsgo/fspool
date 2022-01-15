@@ -10,6 +10,16 @@ import (
 	"time"
 )
 
+// CanMarkUsing 支持标记在使用中
+type CanMarkUsing interface {
+	PEMarkUsing()
+}
+
+// CanMarkIdle 支持标记当前已处于空闲中
+type CanMarkIdle interface {
+	PEMarkIdle()
+}
+
 // NewMetaInfo 创建一个 *MetaInfo
 func NewMetaInfo() *MetaInfo {
 	return &MetaInfo{
@@ -18,6 +28,9 @@ func NewMetaInfo() *MetaInfo {
 		},
 	}
 }
+
+var _ CanMarkUsing = (*MetaInfo)(nil)
+var _ CanMarkIdle = (*MetaInfo)(nil)
 
 // MetaInfo 包含创建时间和使用时间、使用次数等元信息
 type MetaInfo struct {
@@ -83,6 +96,11 @@ func (w *MetaInfo) cloneMeta() *MetaInfo {
 	}
 }
 
+// HasMeta 判断是否支持读取 Meta 信息
+type HasMeta interface {
+	PEMeta() Meta
+}
+
 // Meta 元信息
 type Meta struct {
 	// ID  当前 Pool 创建的第N个元素
@@ -107,10 +125,11 @@ func (m Meta) String() string {
 	return string(bf)
 }
 
-// ReadMeta 获取元信息
-func ReadMeta(item interface{}) Meta {
-	type PEMeta interface {
-		PEMeta() Meta
+// ReadMeta 获取缓存信息的元信息,若没有，会返回 nil
+func ReadMeta(item interface{}) *Meta {
+	if ri, ok := item.(HasMeta); ok {
+		m := ri.PEMeta()
+		return &m
 	}
-	return item.(PEMeta).PEMeta()
+	return nil
 }

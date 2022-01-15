@@ -425,7 +425,7 @@ func TestNewSimpleElement(t *testing.T) {
 
 			val := item.(SimpleElement)
 			defer val.Close()
-			user := val.Raw().(*userInfo)
+			user := val.PERaw().(*userInfo)
 
 			require.Equal(t, 0, user.num)
 			user.num = i + 10

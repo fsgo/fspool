@@ -13,39 +13,31 @@ import (
 	"time"
 )
 
-// Element pool element
+// Element 对象池的元素定义
 type Element interface {
 	// PEActive 判断元素是否有效
 	PEActive() error
 
-	// PEMarkUsing 标记元素在使用
-	PEMarkUsing()
-
-	// PEMarkIdle 标记当前处于空闲状态
-	PEMarkIdle()
-
 	// PERawClose 元素最元素的 close
 	PERawClose() error
-
-	PEMeta() Meta
 
 	// Close 当前元素放回 pool 或者 销毁
 	Close() error
 }
 
-// PEActiver 是否有效
+// PEActiver 对象是否有效
 type PEActiver interface {
 	PEActive() error
 }
 
-// CanReset reset it
+// CanReset 重置对象为初始化状态
 type CanReset interface {
 	PEReset()
 }
 
-// HasRaw raw value
+// HasRaw 支持获取原始的对象
 type HasRaw interface {
-	Raw() interface{}
+	PERaw() interface{}
 }
 
 // CanBindPool bind element to pool
@@ -136,7 +128,9 @@ func (p *simplePool) Get(ctx context.Context) (io.Closer, error) {
 		}
 	}
 	if el != nil {
-		el.PEMarkUsing()
+		if cu, ok := el.(CanMarkUsing); ok {
+			cu.PEMarkUsing()
+		}
 	}
 	return el, err
 }
@@ -285,7 +279,9 @@ func (p *simplePool) putElement(dc Element, err error) {
 		item.PEReset()
 	}
 
-	dc.PEMarkIdle()
+	if ci, ok := dc.(CanMarkIdle); ok {
+		ci.PEMarkIdle()
+	}
 
 	if err != nil {
 		dc.PERawClose()
@@ -551,8 +547,8 @@ type SimpleRawItem struct {
 
 // SimpleElement SimplePool 直接使用时的原始类型定义
 type SimpleElement interface {
+	HasRaw
 	Close() error
-	Raw() interface{}
 }
 
 // NewSimpleElement 创建一个新的通用类型的元素
@@ -599,7 +595,7 @@ func (elt *elementTPL) BindPool(p NewElementNeed) {
 	elt.pool = p
 }
 
-func (elt *elementTPL) Raw() interface{} {
+func (elt *elementTPL) PERaw() interface{} {
 	if elt.isClosed() {
 		return nil
 	}
