@@ -33,7 +33,7 @@ var (
 // nowFunc returns the current time; it's overridden in tests.
 var nowFunc = time.Now
 
-// Option pool 配置选项
+// Option pool 配置选项，当前所有的选项都是可选的
 type Option struct {
 	// MaxOpen 最大打开数量
 	// <= 0 为不限制

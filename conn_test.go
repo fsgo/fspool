@@ -19,6 +19,8 @@ import (
 type testConnServer struct {
 	onAcceptErr func(err error)
 	connecting  int32
+	listener    net.Listener
+	close       func()
 }
 
 func (ts *testConnServer) Serve(ctx context.Context, l net.Listener) error {
@@ -38,6 +40,7 @@ func (ts *testConnServer) Serve(ctx context.Context, l net.Listener) error {
 }
 
 func (ts *testConnServer) handler(conn net.Conn) {
+	defer conn.Close()
 	atomic.AddInt32(&ts.connecting, 1)
 	defer func() {
 		atomic.AddInt32(&ts.connecting, -1)
@@ -53,30 +56,57 @@ func (ts *testConnServer) handler(conn net.Conn) {
 	}
 }
 
+func (ts *testConnServer) clientRW(conn net.Conn) error {
+	defer conn.Close()
+	_, err := conn.Write([]byte("hello\n"))
+	if err != nil {
+		return err
+	}
+	rd := bufio.NewReader(conn)
+	_, _, errRead := rd.ReadLine()
+	return errRead
+}
+
 func (ts *testConnServer) getConnecting() int {
 	val := atomic.LoadInt32(&ts.connecting)
 	return int(val)
 }
 
-func TestNewConnPool(t *testing.T) {
-	ts := &testConnServer{
-		onAcceptErr: func(err error) {},
-		connecting:  0,
+func (ts *testConnServer) Start() {
+	if ts.onAcceptErr == nil {
+		ts.onAcceptErr = func(err error) {}
 	}
-
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ts.close = cancel
 
 	l, errListen := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, errListen)
-
+	if errListen != nil {
+		panic(errListen)
+	}
+	ts.listener = l
 	go func() {
 		_ = ts.Serve(ctx, l)
 	}()
+}
+
+func (ts *testConnServer) Close() {
+	ts.close()
+	ts.listener.Close()
+}
+
+func (ts *testConnServer) dialCtx(ctx context.Context) (net.Conn, error) {
+	addr := ts.listener.Addr()
+	return (&net.Dialer{}).DialContext(ctx, addr.Network(), addr.String())
+}
+
+func TestNewConnPool(t *testing.T) {
+	ts := &testConnServer{}
+	ts.Start()
+	defer ts.Close()
 
 	createConn := func(ctx context.Context) (net.Conn, error) {
 		t.Logf("create new pConn start")
-		conn, err := net.DialTimeout("tcp", l.Addr().String(), time.Second)
+		conn, err := net.DialTimeout("tcp", ts.listener.Addr().String(), time.Second)
 		t.Logf("create new pConn finish")
 		return conn, err
 	}
@@ -139,4 +169,49 @@ func TestNewConnPool(t *testing.T) {
 			})
 		}
 	})
+}
+
+func Benchmark_RW_ConnPool(b *testing.B) {
+	ts := &testConnServer{}
+	ts.Start()
+	defer ts.Close()
+	opt := &Option{
+		MaxOpen: 10,
+		MaxIdle: 10,
+	}
+	cp := NewConnPool(opt, ts.dialCtx)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		func() {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			conn, err := cp.Get(ctx)
+			if err != nil {
+				b.Fatal(err)
+			}
+			if err = ts.clientRW(conn); err != nil {
+				b.Fatal(err)
+			}
+		}()
+	}
+}
+
+func Benchmark_RW_NoPool(b *testing.B) {
+	ts := &testConnServer{}
+	ts.Start()
+	defer ts.Close()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		func() {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			conn, err := ts.dialCtx(ctx)
+			if err != nil {
+				b.Fatal(err)
+			}
+			if err = ts.clientRW(conn); err != nil {
+				b.Fatal(err)
+			}
+		}()
+	}
 }

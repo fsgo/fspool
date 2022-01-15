@@ -292,7 +292,9 @@ func (p *simplePool) nextRequestKeyLocked() uint64 {
 	return next
 }
 
-// Put put to pool
+// Put 将对象放入对象池，若是对象已经异常，也必须调用该方法，
+// 但是调用的时候，传入的值为 nil
+// 必须保证没 Get 到一个对象，都必须要调用一次 Put 方法，这样才能保证连接池的计数是正确的
 func (p *simplePool) Put(el interface{}) error {
 	if el == nil {
 		p.putElement(nil, ErrBadValue)
@@ -524,7 +526,7 @@ func (p *simplePool) Stats() Stats {
 	return stats
 }
 
-// Close close the pool
+// Close 关闭对象池
 func (p *simplePool) Close() error {
 	p.mu.Lock()
 	if p.closed {

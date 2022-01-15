@@ -51,7 +51,7 @@ type connPool struct {
 	raw SimplePool
 }
 
-// Get get
+// Get 获取一个网络连接
 func (cp *connPool) Get(ctx context.Context) (el net.Conn, err error) {
 	value, err := cp.raw.Get(ctx)
 	if err != nil {
@@ -71,7 +71,7 @@ func (cp *connPool) Range(fn func(net.Conn) error) error {
 	})
 }
 
-// Close close pool
+// Close 关闭连接池
 func (cp *connPool) Close() error {
 	return cp.raw.Close()
 }
@@ -81,7 +81,7 @@ func (cp *connPool) Option() Option {
 	return cp.raw.Option()
 }
 
-// Stats get pool stats
+// Stats 连接池的状态
 func (cp *connPool) Stats() Stats {
 	return cp.raw.Stats()
 }
@@ -303,8 +303,13 @@ func (c *pConn) PEActive() error {
 }
 
 func (c *pConn) rawConn() net.Conn {
-	if r, ok := c.raw.(interface{ Raw() net.Conn }); ok {
-		return r.Raw()
+	raw := c.raw
+	for {
+		if r, ok := raw.(interface{ Raw() net.Conn }); ok {
+			raw = r.Raw()
+		} else {
+			break
+		}
 	}
-	return c.raw
+	return raw
 }

@@ -543,5 +543,43 @@ func BenchmarkNewSimplePool(b *testing.B) {
 		require.NoError(b, err)
 		item.Close()
 	}
+}
 
+func Benchmark_Get_SyncPool(b *testing.B) {
+	type userInfo struct {
+		num int
+	}
+	p := sync.Pool{
+		New: func() interface{} {
+			return &userInfo{}
+		},
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		val := p.Get()
+		p.Put(val)
+	}
+}
+
+func Benchmark_Get_SimplePool(b *testing.B) {
+	type userInfo struct {
+		num int
+	}
+	opt := &Option{
+		MaxIdle: 100,
+	}
+	// 功能相比 sync.Pool 要复杂，比如包含了 reset 等逻辑，计数等情况
+	p := NewSimplePool(opt, func(ctx context.Context, need PoolPutter) (Element, error) {
+		return NewSimpleElement(&SimpleRawItem{
+			Raw: &userInfo{},
+		}), nil
+	})
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		val, err := p.Get(context.Background())
+		if err != nil {
+			b.Fatal(err)
+		}
+		val.Close()
+	}
 }
