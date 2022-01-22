@@ -127,9 +127,20 @@ func (m Meta) String() string {
 
 // ReadMeta 获取缓存信息的元信息,若没有，会返回 nil
 func ReadMeta(item interface{}) *Meta {
-	if ri, ok := item.(HasMeta); ok {
-		m := ri.PEMeta()
-		return &m
+	val := item
+	for {
+		if val == nil {
+			return nil
+		}
+		if ri, ok := val.(HasMeta); ok {
+			m := ri.PEMeta()
+			return &m
+		}
+
+		if rr, ok := val.(HasPERaw); ok {
+			val = rr.PERaw()
+		} else {
+			return nil
+		}
 	}
-	return nil
 }

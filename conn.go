@@ -103,6 +103,8 @@ func newPConn(raw net.Conn, p PoolPutter) *pConn {
 var _ net.Conn = (*pConn)(nil)
 var _ CanSetError = (*pConn)(nil)
 var _ Element = (*pConn)(nil)
+var _ HasPERaw = (*pConn)(nil)
+var _ HasMeta = (*pConn)(nil)
 
 type pConn struct {
 	*MetaInfo
@@ -253,7 +255,7 @@ func (c *pConn) Raw() net.Conn {
 	return c.raw
 }
 
-var _ HasRaw = (*pConn)(nil)
+var _ HasPERaw = (*pConn)(nil)
 
 func (c *pConn) PERaw() interface{} {
 	return c.Raw()

@@ -40,7 +40,7 @@ func ExampleNewSimplePool() {
 		if err != nil {
 			panic(err.Error())
 		}
-		u := item.(fspool.HasRaw).PERaw().(*userInfo)
+		u := item.(fspool.HasPERaw).PERaw().(*userInfo)
 		fmt.Println("user.num=", u.num)
 		fmt.Println("user.used=", u.used)
 

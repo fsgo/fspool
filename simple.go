@@ -35,8 +35,8 @@ type (
 		PEReset()
 	}
 
-	// HasRaw 支持获取原始的对象
-	HasRaw interface {
+	// HasPERaw 支持获取原始的对象
+	HasPERaw interface {
 		PERaw() interface{}
 	}
 
@@ -45,7 +45,7 @@ type (
 		BindPool(p PoolPutter)
 	}
 
-	// CanSetError 设置错误
+	// CanSetError 支持设置错误
 	CanSetError interface {
 		SetError(err error)
 	}
@@ -154,6 +154,10 @@ func (p *simplePool) Option() Option {
 func (p *simplePool) Get(ctx context.Context) (io.Closer, error) {
 	var el Element
 	var err error
+	// selectOne 里已经有判断元素是否有效了
+	// 只有在等待队列里的请求，获取到一个已经失效的元素的时候，才会出现重试
+	// 从空闲队列里获取元素的时候，已经将失效的元素给剔除掉了，而且失败的时候也不会返回 ErrBadValue
+	// 若是全新创建的元素，也是不会进行重试的
 	for i := 0; i < 2; i++ {
 		el, err = p.selectOne(ctx)
 		if err != ErrBadValue {
@@ -585,7 +589,7 @@ type SimpleRawItem struct {
 
 // SimpleElement SimplePool 直接使用时的原始类型定义
 type SimpleElement interface {
-	HasRaw
+	HasPERaw
 	Close() error
 }
 
@@ -600,6 +604,8 @@ func NewSimpleElement(item *SimpleRawItem) Element {
 var _ SimpleElement = (*elementTPL)(nil)
 var _ Element = (*elementTPL)(nil)
 var _ CanBindPool = (*elementTPL)(nil)
+var _ HasPERaw = (*elementTPL)(nil)
+var _ CanSetError = (*elementTPL)(nil)
 
 type elementTPL struct {
 	err error
@@ -711,12 +717,24 @@ func (elt *elementTPL) SetError(err error) {
 // 	type CanSetError interface {
 // 		CanSetError(err error)
 // 	}
+// 	若是 obj 实现了 HasPERaw，会尝试从更底层的方法去判断是否有实现 CanSetError
 func TrySetError(obj interface{}, err error) bool {
-	if se, ok := obj.(CanSetError); ok {
-		se.SetError(err)
-		return true
+	val := obj
+	for {
+		if val == nil {
+			return false
+		}
+		if se, ok := val.(CanSetError); ok {
+			se.SetError(err)
+			return true
+		}
+
+		if rr, ok := val.(HasPERaw); ok {
+			val = rr.PERaw()
+		} else {
+			return false
+		}
 	}
-	return false
 }
 
 // MustSetError 设置错误,若失败会 panic
