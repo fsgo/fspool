@@ -110,28 +110,27 @@ type elementRequest struct {
 
 // simplePool common pool from database.sql
 type simplePool struct {
-	nextID uint64
-
-	option Option
-
-	newFunc NewElementFunc
-
-	mu sync.Mutex
-
-	numOpen int // 已打开的
-	wait    int // 当前等待的数量
-
-	nextRequest uint64 // Next key to use in elementRequests.
 
 	// elementRequests 等待中的请求
 	elementRequests map[uint64]chan elementRequest
 
-	idles  []Element
-	closed bool
+	newFunc NewElementFunc
+
+	onNewElement func(el Element)
 
 	cleanerCh chan struct{}
 
-	onNewElement func(el Element)
+	idles []Element
+
+	option Option
+
+	numOpen int // 已打开的
+
+	nextRequest uint64 // Next key to use in elementRequests.
+
+	wait int // 当前等待的数量
+
+	nextID uint64
 
 	// Atomic access only. At top of struct to prevent mis-alignment
 	// on 32-bit platforms. Of type time.Duration.
@@ -141,6 +140,10 @@ type simplePool struct {
 	maxIdleClosed     int64 // Total number of elements closed due to idle count.
 	maxIdleTimeClosed int64 // Total number of elements closed due to idle time.
 	maxLifetimeClosed int64 // Total number of elements closed due to max element lifetime
+
+	mu sync.Mutex
+
+	closed bool
 }
 
 // Option get pool option
@@ -714,10 +717,11 @@ func (elt *elementTPL) SetError(err error) {
 // TrySetError 尝试设置错误，若设置成功返回 true,否则返回 false
 //
 // obj 必须实现了 CanSetError:
-// 	type CanSetError interface {
-// 		CanSetError(err error)
-// 	}
-// 	若是 obj 实现了 HasPERaw，会尝试从更底层的方法去判断是否有实现 CanSetError
+//
+//	type CanSetError interface {
+//		CanSetError(err error)
+//	}
+//	若是 obj 实现了 HasPERaw，会尝试从更底层的方法去判断是否有实现 CanSetError
 func TrySetError(obj interface{}, err error) bool {
 	val := obj
 	for {
@@ -740,9 +744,10 @@ func TrySetError(obj interface{}, err error) bool {
 // MustSetError 设置错误,若失败会 panic
 //
 // obj 必须实现了 CanSetError:
-// 	type CanSetError interface {
-// 		CanSetError(err error)
-// 	}
+//
+//	type CanSetError interface {
+//		CanSetError(err error)
+//	}
 func MustSetError(obj interface{}, err error) {
 	if !TrySetError(obj, err) {
 		panic(fmt.Sprintf("CanSetError failed, %T not implement CanSetError interface", obj))

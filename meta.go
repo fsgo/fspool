@@ -103,14 +103,15 @@ type HasMeta interface {
 
 // Meta 元信息
 type Meta struct {
-	// ID  当前 Pool 创建的第N个元素
-	ID uint64
 
 	// CreateTime 创建时间
 	CreateTime time.Time
 
 	// LastUseTime 最后使用时间
 	LastUseTime time.Time
+
+	// ID  当前 Pool 创建的第N个元素
+	ID uint64
 
 	// UsedTimes 使用总次数
 	UsedTimes uint64

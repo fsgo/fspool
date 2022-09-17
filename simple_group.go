@@ -53,15 +53,15 @@ var _ SimplePoolGroup = (*simpleGroup)(nil)
 
 // simpleGroup group pool
 type simpleGroup struct {
-	option    Option
-	sgOption  Option
 	genNewEle GroupNewElementFunc
 	pools     map[interface{}]*groupPoolItem
-	mu        sync.Mutex
 	done      context.CancelFunc
-	closed    bool
+	option    Option
+	sgOption  Option
 
 	nextID uint64
+	mu     sync.Mutex
+	closed bool
 }
 
 func (sg *simpleGroup) Range(fn func(io.Closer) error) error {

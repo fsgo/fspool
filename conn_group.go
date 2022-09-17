@@ -35,9 +35,9 @@ func NewConnPoolGroup(opt *Option, gn GroupNewConnFunc) ConnPoolGroup {
 // ConnPoolGroup 按照 key 分组的 连接池
 //
 // 如有一批 IP：
-// 	1. 192.168.0.1:80
-// 	2. 192.168.0.2:80
-// 	3. 192.168.0.3:81
+//  1. 192.168.0.1:80
+//  2. 192.168.0.2:80
+//  3. 192.168.0.3:81
 //
 // 每个IP 都有独立的连接池。
 // 配置的 Option 是针对每个IP的。
