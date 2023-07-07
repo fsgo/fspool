@@ -6,6 +6,7 @@ package fspool
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"reflect"
@@ -54,7 +55,7 @@ func (t *testEL) NextValue() int64 {
 	// 这个对象将被销毁掉
 	if val%int64(testModNum) == int64(testModNum-1) {
 		t.mu.Lock()
-		t.lastErr = fmt.Errorf("val=99 must error")
+		t.lastErr = errors.New("val=99 must error")
 		t.mu.Unlock()
 	}
 	return val
@@ -219,7 +220,6 @@ func TestNewSimple(t *testing.T) {
 				require.NoError(t, err2)
 				defer el2.Close()
 			})
-
 		})
 	})
 
@@ -411,7 +411,7 @@ func TestNewSimpleElement(t *testing.T) {
 	p := NewSimplePool(opt, func(ctx context.Context, need PoolPutter) (Element, error) {
 		return NewSimpleElement(&SimpleRawItem{
 			Raw: &userInfo{},
-			Reset: func(raw interface{}) {
+			Reset: func(raw any) {
 				atomic.AddInt32(&resetTotal, 1)
 				raw.(*userInfo).num = 0
 			},
@@ -440,13 +440,12 @@ func TestNewSimpleElement(t *testing.T) {
 			require.Equal(t, resetWant, resetTotal)
 		})
 	}
-
 }
 
 func TestMustSetError(t *testing.T) {
 	t.Run("case 1-ok", func(t *testing.T) {
 		item := &pConn{}
-		err := fmt.Errorf("err")
+		err := errors.New("err")
 		MustSetError(item, err)
 		require.Error(t, item.PEActive())
 	})
@@ -455,7 +454,7 @@ func TestMustSetError(t *testing.T) {
 		type u struct {
 		}
 		item := &u{}
-		err := fmt.Errorf("err")
+		err := errors.New("err")
 		defer func() {
 			if re := recover(); re == nil {
 				t.Fatalf("expect panic")
@@ -502,7 +501,7 @@ func TestSimplePool_Get_BadEls(t *testing.T) {
 	})
 
 	for _, el := range els {
-		MustSetError(el, fmt.Errorf("bad"))
+		MustSetError(el, errors.New("bad"))
 	}
 
 	t.Run("get one", func(t *testing.T) {
@@ -530,7 +529,7 @@ func BenchmarkNewSimplePool(b *testing.B) {
 	p := NewSimplePool(opt, func(ctx context.Context, need PoolPutter) (Element, error) {
 		return NewSimpleElement(&SimpleRawItem{
 			Raw: &userInfo{},
-			Reset: func(raw interface{}) {
+			Reset: func(raw any) {
 				atomic.AddInt32(&resetTotal, 1)
 				raw.(*userInfo).num = 0
 			},
@@ -550,8 +549,10 @@ func Benchmark_Get_SyncPool(b *testing.B) {
 		num int
 	}
 	p := sync.Pool{
-		New: func() interface{} {
-			return &userInfo{}
+		New: func() any {
+			return &userInfo{
+				num: 0,
+			}
 		},
 	}
 	b.ResetTimer()
@@ -571,7 +572,9 @@ func Benchmark_Get_SimplePool(b *testing.B) {
 	// 功能相比 sync.Pool 要复杂，比如包含了 reset 等逻辑，计数等情况
 	p := NewSimplePool(opt, func(ctx context.Context, need PoolPutter) (Element, error) {
 		return NewSimpleElement(&SimpleRawItem{
-			Raw: &userInfo{},
+			Raw: &userInfo{
+				num: 0,
+			},
 		}), nil
 	})
 	b.ResetTimer()

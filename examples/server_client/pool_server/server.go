@@ -109,7 +109,3 @@ func serverHandler(conn net.Conn) {
 		}
 	}
 }
-
-func init() {
-	rand.Seed(time.Now().Unix())
-}
