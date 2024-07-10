@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// CanMarkUsing 支持标记在使用中
+// CanMarkUsing 用于给 Pool 中的 Item 标记在使用中
 type CanMarkUsing interface {
 	PEMarkUsing()
 }
@@ -103,7 +103,6 @@ type HasMeta interface {
 
 // Meta 元信息
 type Meta struct {
-
 	// CreateTime 创建时间
 	CreateTime time.Time
 
@@ -127,7 +126,7 @@ func (m Meta) String() string {
 }
 
 // ReadMeta 获取缓存信息的元信息,若没有，会返回 nil
-func ReadMeta(item interface{}) *Meta {
+func ReadMeta(item any) *Meta {
 	val := item
 	for {
 		if val == nil {

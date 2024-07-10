@@ -60,11 +60,7 @@ func (opt *Option) shortestIdleTime() time.Duration {
 		return opt.MaxIdleTime
 	}
 
-	min := opt.MaxIdleTime
-	if min > opt.MaxLifeTime {
-		min = opt.MaxLifeTime
-	}
-	return min
+	return min(opt.MaxIdleTime, opt.MaxLifeTime)
 }
 
 // Clone copy it
@@ -93,7 +89,8 @@ type Stats struct {
 	Wait    int // 当前，当前等待的总数
 
 	// Counters
-	WaitCount         int64         // 累计等待的请求数
+	WaitCount int64 // 累计等待的请求数
+
 	WaitDuration      time.Duration // 累计等待的总时间
 	MaxIdleClosed     int64         // 由于超过 MaxIdle, 被关闭的总数
 	MaxIdleTimeClosed int64         // 由于超过 MaxIdleTime，被关闭的总数
@@ -108,6 +105,6 @@ func (s Stats) String() string {
 
 // GroupStats Group Pool stats
 type GroupStats struct {
-	Groups map[interface{}]Stats
+	Groups map[any]Stats
 	All    Stats
 }

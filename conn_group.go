@@ -14,7 +14,7 @@ import (
 type GroupNewConnFunc func(addr net.Addr) NewConnFunc
 
 func (gn GroupNewConnFunc) trans() GroupNewElementFunc {
-	return func(key interface{}) NewElementFunc {
+	return func(key any) NewElementFunc {
 		return func(ctx context.Context, pool PoolPutter) (Element, error) {
 			conn, err := gn(key.(net.Addr))(ctx)
 			if err != nil {
@@ -25,9 +25,9 @@ func (gn GroupNewConnFunc) trans() GroupNewElementFunc {
 	}
 }
 
-// NewConnPoolGroup 创建新的 Group
-func NewConnPoolGroup(opt *Option, gn GroupNewConnFunc) ConnPoolGroup {
-	return &connGroup{
+// NewConnPoolGroup 创建新的 ConnPool Group
+func NewConnPoolGroup(opt *Option, gn GroupNewConnFunc) *ConnPoolGroup {
+	return &ConnPoolGroup{
 		raw: NewSimplePoolGroup(opt, gn.trans()),
 	}
 }
@@ -42,31 +42,21 @@ func NewConnPoolGroup(opt *Option, gn GroupNewConnFunc) ConnPoolGroup {
 // 每个IP 都有独立的连接池。
 // 配置的 Option 是针对每个IP的。
 // 如 MaxOpen=1，则允许每个 IP 都最多创建1个连接，上面共有3个 IP，则一一共最多创建3个连接。
-type ConnPoolGroup interface {
-	Get(ctx context.Context, addr net.Addr) (net.Conn, error)
-	GroupStats() GroupStats
-	Close() error
-	Option() Option
-	Range(func(el net.Conn) error) error
+type ConnPoolGroup struct {
+	raw *SimplePoolGroup
 }
 
-var _ ConnPoolGroup = (*connGroup)(nil)
-
-type connGroup struct {
-	raw SimplePoolGroup
-}
-
-func (cg *connGroup) Range(fn func(el net.Conn) error) error {
+func (cg *ConnPoolGroup) Range(fn func(el net.Conn) error) error {
 	return cg.raw.Range(func(el io.Closer) error {
 		return fn(el.(net.Conn))
 	})
 }
 
-func (cg *connGroup) Option() Option {
+func (cg *ConnPoolGroup) Option() Option {
 	return cg.raw.Option()
 }
 
-func (cg *connGroup) Get(ctx context.Context, addr net.Addr) (net.Conn, error) {
+func (cg *ConnPoolGroup) Get(ctx context.Context, addr net.Addr) (net.Conn, error) {
 	el, err := cg.raw.Get(ctx, addr)
 	if err != nil {
 		return nil, err
@@ -74,10 +64,10 @@ func (cg *connGroup) Get(ctx context.Context, addr net.Addr) (net.Conn, error) {
 	return el.(net.Conn), err
 }
 
-func (cg *connGroup) GroupStats() GroupStats {
+func (cg *ConnPoolGroup) GroupStats() GroupStats {
 	return cg.raw.GroupStats()
 }
 
-func (cg *connGroup) Close() error {
+func (cg *ConnPoolGroup) Close() error {
 	return cg.raw.Close()
 }

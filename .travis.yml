@@ -1,9 +1,0 @@
-language: go
-
-go:
-  - "1.14"
-  - "1.15"
-  - "1.16"
-  - master
-
-script: go test -race -cover ./...

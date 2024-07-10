@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
+	"github.com/fsgo/fst"
 )
 
 func TestNewSimpleGroup(t *testing.T) {
@@ -21,7 +21,7 @@ func TestNewSimpleGroup(t *testing.T) {
 	resetID := func() {
 		atomic.StoreInt32(&id, 0)
 	}
-	newFunc := func(key interface{}) NewElementFunc {
+	newFunc := func(key any) NewElementFunc {
 		return func(ctx context.Context, pool PoolPutter) (Element, error) {
 			v := atomic.AddInt32(&id, 1)
 			item := &testEL{
@@ -53,18 +53,18 @@ func TestNewSimpleGroup(t *testing.T) {
 		defer resetID()
 
 		key := "abc"
-		pg := NewSimplePoolGroup(nil, newFunc).(*simpleGroup)
+		pg := NewSimplePoolGroup(nil, newFunc)
 		for i := 0; i < 100; i++ {
 			t.Run(fmt.Sprintf("for_%d", i), func(t *testing.T) {
 				v, err := pg.Get(context.Background(), key)
-				require.NoError(t, err)
+				fst.NoError(t, err)
 
 				el := v.(*testEL)
 				defer el.Close()
 
-				require.Equal(t, key, el.Name())
+				fst.Equal(t, key, el.Name())
 				wantID := int32(i) + 1
-				require.Equal(t, wantID, el.ID())
+				fst.Equal(t, wantID, el.ID())
 			})
 
 			t.Run("Stats", func(t *testing.T) {
@@ -77,18 +77,18 @@ func TestNewSimpleGroup(t *testing.T) {
 					MaxIdleClosed: int64(i) + 1,
 				}
 
-				require.Equal(t, want, got)
+				fst.Equal(t, want, got)
 			})
 
 			t.Run("pool_size", func(t *testing.T) {
-				require.Equal(t, 1, len(pg.pools))
+				fst.Equal(t, 1, len(pg.pools))
 			})
 
 			pg.doCheckExpire()
 		}
 
 		t.Run("close", func(t *testing.T) {
-			require.NoError(t, pg.Close())
+			fst.NoError(t, pg.Close())
 		})
 	})
 }

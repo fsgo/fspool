@@ -34,23 +34,23 @@ func connCheck(conn net.Conn) error {
 		return err
 	}
 
-	err = rawConn.Read(func(fd uintptr) bool {
+	errRead := rawConn.Read(func(fd uintptr) bool {
 		var buf [1]byte
-		n, err := syscall.Read(int(fd), buf[:])
+		n, err2 := syscall.Read(int(fd), buf[:])
 		switch {
-		case n == 0 && err == nil:
+		case n == 0 && err2 == nil:
 			sysErr = io.EOF
 		case n > 0:
 			sysErr = errUnexpectedRead
-		case err == syscall.EAGAIN || err == syscall.EWOULDBLOCK:
+		case errors.Is(err2, syscall.EAGAIN) || errors.Is(err2, syscall.EWOULDBLOCK):
 			sysErr = nil
 		default:
-			sysErr = err
+			sysErr = err2
 		}
 		return true
 	})
-	if err != nil {
-		return err
+	if errRead != nil {
+		return errRead
 	}
 
 	return sysErr

@@ -13,10 +13,10 @@ import (
 )
 
 // GroupNewElementFunc 给 Group 创建新的 pool
-type GroupNewElementFunc func(key interface{}) NewElementFunc
+type GroupNewElementFunc func(key any) NewElementFunc
 
 // NewSimplePoolGroup 创建新的 Group
-func NewSimplePoolGroup(opt *Option, gn GroupNewElementFunc) SimplePoolGroup {
+func NewSimplePoolGroup(opt *Option, gn GroupNewElementFunc) *SimplePoolGroup {
 	if opt == nil {
 		opt = &Option{}
 	}
@@ -27,7 +27,7 @@ func NewSimplePoolGroup(opt *Option, gn GroupNewElementFunc) SimplePoolGroup {
 	if sgOpt.MaxIdleTime < minIdle {
 		sgOpt.MaxIdleTime = minIdle
 	}
-	g := &simpleGroup{
+	g := &SimplePoolGroup{
 		option:    *opt.Clone(),
 		sgOption:  *sgOpt,
 		done:      cancel,
@@ -41,20 +41,9 @@ func NewSimplePoolGroup(opt *Option, gn GroupNewElementFunc) SimplePoolGroup {
 //
 // 配置的 Option 是针对每个 key 的。
 // 如 MaxOpen=1，则允许每个 key 都最多创建1个实例
-type SimplePoolGroup interface {
-	Get(ctx context.Context, key interface{}) (io.Closer, error)
-	GroupStats() GroupStats
-	Close() error
-	Option() Option
-	Range(func(el io.Closer) error) error
-}
-
-var _ SimplePoolGroup = (*simpleGroup)(nil)
-
-// simpleGroup group pool
-type simpleGroup struct {
+type SimplePoolGroup struct {
 	genNewEle GroupNewElementFunc
-	pools     map[interface{}]*groupPoolItem
+	pools     map[any]*groupPoolItem
 	done      context.CancelFunc
 	option    Option
 	sgOption  Option
@@ -64,7 +53,7 @@ type simpleGroup struct {
 	closed bool
 }
 
-func (sg *simpleGroup) Range(fn func(io.Closer) error) error {
+func (sg *SimplePoolGroup) Range(fn func(io.Closer) error) error {
 	sg.mu.Lock()
 	defer sg.mu.Unlock()
 	for _, pool := range sg.pools {
@@ -75,28 +64,30 @@ func (sg *simpleGroup) Range(fn func(io.Closer) error) error {
 	return nil
 }
 
-func (sg *simpleGroup) Option() Option {
+func (sg *SimplePoolGroup) Option() Option {
 	return sg.option
 }
 
-// Get ...
-func (sg *simpleGroup) Get(ctx context.Context, key interface{}) (io.Closer, error) {
+// Get 依据分组 key 获取一个对象池中的对象
+//
+// 当对象使用完成后，调用 Close() 方法后会自动返回对象池
+func (sg *SimplePoolGroup) Get(ctx context.Context, key any) (io.Closer, error) {
 	return sg.getPool(key).Get(ctx)
 }
 
-func (sg *simpleGroup) getPool(key interface{}) *groupPoolItem {
+func (sg *SimplePoolGroup) getPool(key any) *groupPoolItem {
 	poolID := getPoolID(key)
 	sg.mu.Lock()
 	defer sg.mu.Unlock()
 
 	if sg.pools == nil {
-		sg.pools = make(map[interface{}]*groupPoolItem)
+		sg.pools = make(map[any]*groupPoolItem)
 	}
 	p, has := sg.pools[poolID]
 	if !has {
 		fn := sg.genNewEle(key)
 		pool := NewSimplePool(&sg.option, fn)
-		pool.(interface{ OnNewElement(fn func(el Element)) }).OnNewElement(func(el Element) {
+		pool.OnNewElement(func(el Element) {
 			// 设置全局的 nextID
 			trySetNextID(el, &sg.nextID)
 		})
@@ -109,12 +100,12 @@ func (sg *simpleGroup) getPool(key interface{}) *groupPoolItem {
 }
 
 // GroupStats Group 的状态信息
-func (sg *simpleGroup) GroupStats() GroupStats {
+func (sg *SimplePoolGroup) GroupStats() GroupStats {
 	sg.mu.Lock()
 	defer sg.mu.Unlock()
 
 	gs := GroupStats{
-		Groups: make(map[interface{}]Stats, len(sg.pools)),
+		Groups: make(map[any]Stats, len(sg.pools)),
 		All: Stats{
 			Open: !sg.closed,
 		},
@@ -142,8 +133,8 @@ func (sg *simpleGroup) GroupStats() GroupStats {
 	return gs
 }
 
-// Close close pools
-func (sg *simpleGroup) Close() error {
+// Close 关闭对象池
+func (sg *SimplePoolGroup) Close() error {
 	sg.done()
 
 	var err error
@@ -156,14 +147,14 @@ func (sg *simpleGroup) Close() error {
 				err = e
 			}
 		}
-		sg.pools = make(map[interface{}]*groupPoolItem)
+		sg.pools = make(map[any]*groupPoolItem)
 	}
 	sg.mu.Unlock()
 
 	return err
 }
 
-func (sg *simpleGroup) poolCleaner(ctx context.Context, d time.Duration) {
+func (sg *SimplePoolGroup) poolCleaner(ctx context.Context, d time.Duration) {
 	const minInterval = time.Minute
 
 	if d < minInterval {
@@ -183,17 +174,17 @@ func (sg *simpleGroup) poolCleaner(ctx context.Context, d time.Duration) {
 	}
 }
 
-func (sg *simpleGroup) doCheckExpire() {
+func (sg *SimplePoolGroup) doCheckExpire() {
 	sg.mu.Lock()
 	defer sg.mu.Unlock()
 	if sg.pools == nil {
 		return
 	}
-	var expires []interface{}
+	var expires []any
 	for k, p := range sg.pools {
 		if p.Active(sg.sgOption) != nil {
 			expires = append(expires, k)
-			p.Close()
+			_ = p.Close()
 		}
 	}
 	if len(expires) == 0 {
@@ -207,24 +198,23 @@ func (sg *simpleGroup) doCheckExpire() {
 
 type groupPoolItem struct {
 	*MetaInfo
-	SimplePool
+	*SimplePool
 }
 
-func newGroupPoolItem(p SimplePool) *groupPoolItem {
+func newGroupPoolItem(p *SimplePool) *groupPoolItem {
 	return &groupPoolItem{
 		MetaInfo:   NewMetaInfo(),
 		SimplePool: p,
 	}
 }
 
-func getPoolID(key interface{}) interface{} {
-	if v, ok := key.(interface{ PoolID() interface{} }); ok {
+func getPoolID(key any) any {
+	if v, ok := key.(interface{ PoolID() any }); ok {
 		return v.PoolID()
 	}
 
 	if v, ok := key.(fmt.Stringer); ok {
 		return v.String()
 	}
-
 	return key
 }

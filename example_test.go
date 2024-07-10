@@ -26,7 +26,7 @@ func ExampleNewSimplePool() {
 	fn := func(ctx context.Context, need fspool.PoolPutter) (fspool.Element, error) {
 		return fspool.NewSimpleElement(&fspool.SimpleRawItem{
 			Raw: &userInfo{},
-			Reset: func(raw interface{}) {
+			Reset: func(raw any) {
 				raw.(*userInfo).num = 0
 				raw.(*userInfo).used++
 			},

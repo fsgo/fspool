@@ -6,6 +6,7 @@ package fspool
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"sync"
@@ -37,7 +38,7 @@ type (
 
 	// HasPERaw 支持获取原始的对象
 	HasPERaw interface {
-		PERaw() interface{}
+		PERaw() any
 	}
 
 	// CanBindPool 将 pool 绑定到对象上
@@ -57,7 +58,7 @@ type PoolPutter interface {
 	// 每使用 Get 方法拿到一个对象，就需要使用 Put 方法一次
 	// 在实现的过程中，可能将调用 Put 方法的调用放入获取值的 Close 方法的逻辑中
 	// 比如 ConnPool 的实现
-	Put(interface{}) error
+	Put(any) error
 
 	// Option 连接池的配置信息
 	Option() Option
@@ -67,12 +68,12 @@ type PoolPutter interface {
 type NewElementFunc func(context.Context, PoolPutter) (Element, error)
 
 // NewSimplePool 创建一个新的对象池
-func NewSimplePool(opt *Option, newFunc NewElementFunc) SimplePool {
+func NewSimplePool(opt *Option, newFunc NewElementFunc) *SimplePool {
 	if opt == nil {
 		opt = &Option{}
 	}
 
-	p := &simplePool{
+	p := &SimplePool{
 		option:          *opt,
 		newFunc:         newFunc,
 		idles:           make([]Element, 0, opt.MaxIdle),
@@ -81,36 +82,13 @@ func NewSimplePool(opt *Option, newFunc NewElementFunc) SimplePool {
 	return p
 }
 
-// SimplePool 一个简单的，通用的连接池
-type SimplePool interface {
-	// Get 从对象池中读取到一个对象，可能是新生成的也可能是旧的
-	// 不管对象在使用后，是正常还是异常，都必须调用 Close 方法，以将对象重新放回对象池
-	// 否则对象池的计算会不准确
-	Get(ctx context.Context) (io.Closer, error)
-
-	// Option 对象池的配置信息
-	Option() Option
-
-	// Stats 当前对象池的状态
-	Stats() Stats
-
-	// Range 遍历所有 idle 状态的对象
-	Range(func(io.Closer) error) error
-
-	// Close 关闭对象池
-	Close() error
-}
-
-var _ SimplePool = (*simplePool)(nil)
-
 type elementRequest struct {
 	el  Element
 	err error
 }
 
-// simplePool common pool from database.sql
-type simplePool struct {
-
+// SimplePool 一个简单的，通用的连接池
+type SimplePool struct {
 	// elementRequests 等待中的请求
 	elementRequests map[uint64]chan elementRequest
 
@@ -147,14 +125,14 @@ type simplePool struct {
 }
 
 // Option get pool option
-func (p *simplePool) Option() Option {
+func (p *SimplePool) Option() Option {
 	return p.option
 }
 
 // Get 从对象池中读取到一个对象，可能是新生成的也可能是旧的，
 // 不管对象在使用后，是正常还是异常，都必须调用 Close 方法，以将对象重新放回对象池，
 // 否则对象池的计算会不准确
-func (p *simplePool) Get(ctx context.Context) (io.Closer, error) {
+func (p *SimplePool) Get(ctx context.Context) (io.Closer, error) {
 	var el Element
 	var err error
 	// selectOne 里已经有判断元素是否有效了
@@ -163,7 +141,7 @@ func (p *simplePool) Get(ctx context.Context) (io.Closer, error) {
 	// 若是全新创建的元素，也是不会进行重试的
 	for i := 0; i < 2; i++ {
 		el, err = p.selectOne(ctx)
-		if err != ErrBadValue {
+		if !errors.Is(err, ErrBadValue) {
 			break
 		}
 	}
@@ -175,13 +153,13 @@ func (p *simplePool) Get(ctx context.Context) (io.Closer, error) {
 	return el, err
 }
 
-func (p *simplePool) countClosed(err error) {
-	switch err {
-	case ErrOutOfMaxLife:
+func (p *SimplePool) countClosed(err error) {
+	switch {
+	case errors.Is(err, ErrOutOfMaxLife):
 		p.maxLifetimeClosed++
-	case ErrOutOfMaxIdle:
+	case errors.Is(err, ErrOutOfMaxIdle):
 		p.maxIdleClosed++
-	case ErrOutOfMaxIdleTime:
+	case errors.Is(err, ErrOutOfMaxIdleTime):
 		p.maxIdleTimeClosed++
 	default:
 	}
@@ -189,7 +167,9 @@ func (p *simplePool) countClosed(err error) {
 }
 
 // selectOne 获取一个缓存的或者新创建一个
-func (p *simplePool) selectOne(ctx context.Context) (el Element, err error) {
+//
+//nolint:gocyclo
+func (p *SimplePool) selectOne(ctx context.Context) (el Element, err error) {
 	p.mu.Lock()
 	if p.closed {
 		p.mu.Unlock()
@@ -211,7 +191,7 @@ func (p *simplePool) selectOne(ctx context.Context) (el Element, err error) {
 		p.idles = p.idles[:len(p.idles)-1]
 		if ea := el.PEActive(); ea != nil {
 			p.countClosed(ea)
-			el.PERawClose()
+			_ = el.PERawClose()
 			continue
 		}
 		p.mu.Unlock()
@@ -266,7 +246,7 @@ func (p *simplePool) selectOne(ctx context.Context) (el Element, err error) {
 					p.mu.Lock()
 					p.countClosed(ea)
 					p.mu.Unlock()
-					ret.el.PERawClose()
+					_ = ret.el.PERawClose()
 					return nil, ErrBadValue
 				}
 			}
@@ -293,7 +273,7 @@ func (p *simplePool) selectOne(ctx context.Context) (el Element, err error) {
 
 // nextRequestKeyLocked returns the next connection request key.
 // It is assumed that nextRequest will not overflow.
-func (p *simplePool) nextRequestKeyLocked() uint64 {
+func (p *SimplePool) nextRequestKeyLocked() uint64 {
 	next := p.nextRequest
 	p.nextRequest++
 	return next
@@ -302,7 +282,7 @@ func (p *simplePool) nextRequestKeyLocked() uint64 {
 // Put 将对象放入对象池，若是对象已经异常，也必须调用该方法，
 // 但是调用的时候，传入的值为 nil
 // 必须保证没 Get 到一个对象，都必须要调用一次 Put 方法，这样才能保证连接池的计数是正确的
-func (p *simplePool) Put(el interface{}) error {
+func (p *SimplePool) Put(el any) error {
 	if el == nil {
 		p.putElement(nil, ErrBadValue)
 		return nil
@@ -312,9 +292,9 @@ func (p *simplePool) Put(el interface{}) error {
 	return nil
 }
 
-// putElement adds a connection to the  free simplePool.
+// putElement adds a connection to the  free SimplePool.
 // err is optionally the last error that occurred on this element.
-func (p *simplePool) putElement(dc Element, err error) {
+func (p *SimplePool) putElement(dc Element, err error) {
 	if dc == nil {
 		p.mu.Lock()
 		p.countClosed(err)
@@ -331,7 +311,7 @@ func (p *simplePool) putElement(dc Element, err error) {
 	}
 
 	if err != nil {
-		dc.PERawClose()
+		_ = dc.PERawClose()
 		p.mu.Lock()
 		p.countClosed(err)
 		p.mu.Unlock()
@@ -341,7 +321,7 @@ func (p *simplePool) putElement(dc Element, err error) {
 	// p.option.MaxIdle < 1
 	// means not allow idle element
 	if p.option.MaxIdle < 1 {
-		dc.PERawClose()
+		_ = dc.PERawClose()
 		p.mu.Lock()
 		p.countClosed(ErrOutOfMaxIdle)
 		p.mu.Unlock()
@@ -349,7 +329,7 @@ func (p *simplePool) putElement(dc Element, err error) {
 	}
 
 	if ea := dc.PEActive(); ea != nil {
-		dc.PERawClose()
+		_ = dc.PERawClose()
 		p.mu.Lock()
 		p.countClosed(ea)
 		p.mu.Unlock()
@@ -364,12 +344,12 @@ func (p *simplePool) putElement(dc Element, err error) {
 	p.mu.Unlock()
 
 	if !added {
-		dc.PERawClose()
+		_ = dc.PERawClose()
 		return
 	}
 }
 
-func (p *simplePool) newElement(ctx context.Context) (el Element, err error) {
+func (p *SimplePool) newElement(ctx context.Context) (el Element, err error) {
 	el, err = p.newFunc(ctx, p)
 	if el != nil {
 		if b, ok := el.(CanBindPool); ok {
@@ -392,11 +372,11 @@ func trySetNextID(el Element, nextID *uint64) {
 	}
 }
 
-func (p *simplePool) OnNewElement(fn func(el Element)) {
+func (p *SimplePool) OnNewElement(fn func(el Element)) {
 	p.onNewElement = fn
 }
 
-func (p *simplePool) putElementIdleLocked(dc Element) bool {
+func (p *SimplePool) putElementIdleLocked(dc Element) bool {
 	if dc == nil {
 		panic("putElementIdleLocked with nil value")
 	}
@@ -433,7 +413,7 @@ func (p *simplePool) putElementIdleLocked(dc Element) bool {
 }
 
 // startCleanerLocked starts elementCleaner if needed.
-func (p *simplePool) startCleanerLocked() {
+func (p *SimplePool) startCleanerLocked() {
 	if (p.option.MaxLifeTime > 0 || p.option.MaxIdleTime > 0) && p.numOpen > 0 && p.cleanerCh == nil {
 		p.cleanerCh = make(chan struct{}, 1)
 		// 一个 pool 只会启动一个 gor
@@ -441,7 +421,7 @@ func (p *simplePool) startCleanerLocked() {
 	}
 }
 
-func (p *simplePool) elementCleaner(d time.Duration) {
+func (p *SimplePool) elementCleaner(d time.Duration) {
 	const minInterval = time.Second
 
 	if d < minInterval {
@@ -469,7 +449,7 @@ func (p *simplePool) elementCleaner(d time.Duration) {
 		closing := p.elementCleanerRunLocked()
 		p.mu.Unlock()
 		for _, c := range closing {
-			c.PERawClose()
+			_ = c.PERawClose()
 		}
 
 		if d < minInterval {
@@ -480,7 +460,7 @@ func (p *simplePool) elementCleaner(d time.Duration) {
 }
 
 // elementCleanerRunLocked 从 idle 列表中，找到过期的、失效的元素
-func (p *simplePool) elementCleanerRunLocked() (closing []Element) {
+func (p *SimplePool) elementCleanerRunLocked() (closing []Element) {
 	if p.option.MaxLifeTime > 0 || p.option.MaxIdleTime > 0 {
 		for i := 0; i < len(p.idles); i++ {
 			c := p.idles[i]
@@ -499,7 +479,7 @@ func (p *simplePool) elementCleanerRunLocked() (closing []Element) {
 	return closing
 }
 
-func (p *simplePool) maxIdleElementsLocked() int {
+func (p *SimplePool) maxIdleElementsLocked() int {
 	n := p.option.MaxIdle
 	switch {
 	case n < 0:
@@ -510,7 +490,7 @@ func (p *simplePool) maxIdleElementsLocked() int {
 }
 
 // Stats get pool stats
-func (p *simplePool) Stats() Stats {
+func (p *SimplePool) Stats() Stats {
 	waitTime := atomic.LoadInt64(&p.waitDuration)
 
 	p.mu.Lock()
@@ -534,7 +514,7 @@ func (p *simplePool) Stats() Stats {
 }
 
 // Close 关闭对象池
-func (p *simplePool) Close() error {
+func (p *SimplePool) Close() error {
 	p.mu.Lock()
 	if p.closed {
 		p.mu.Unlock()
@@ -564,7 +544,7 @@ func (p *simplePool) Close() error {
 }
 
 // Range 遍历所有 idle 状态的对象
-func (p *simplePool) Range(fn func(el io.Closer) error) (err error) {
+func (p *SimplePool) Range(fn func(el io.Closer) error) (err error) {
 	p.mu.Lock()
 	for _, el := range p.idles {
 		if err = fn(el); err != nil {
@@ -578,16 +558,16 @@ func (p *simplePool) Range(fn func(el io.Closer) error) (err error) {
 // SimpleRawItem 原始的数据，NewSimpleElement 的参数
 type SimpleRawItem struct {
 	// Raw 原始对象
-	Raw interface{}
+	Raw any
 
 	// CheckActive 判断对象元素对象是否有有效，可选
-	CheckActive func(raw interface{}) error
+	CheckActive func(raw any) error
 
 	// 关闭元素，可选
-	Close func(raw interface{}) error
+	Close func(raw any) error
 
 	// 重置元素，可选
-	Reset func(raw interface{})
+	Reset func(raw any)
 }
 
 // SimpleElement SimplePool 直接使用时的原始类型定义
@@ -642,7 +622,7 @@ func (elt *elementTPL) BindPool(p PoolPutter) {
 	elt.pool = p
 }
 
-func (elt *elementTPL) PERaw() interface{} {
+func (elt *elementTPL) PERaw() any {
 	if elt.isClosed() {
 		return nil
 	}
@@ -722,7 +702,7 @@ func (elt *elementTPL) SetError(err error) {
 //		CanSetError(err error)
 //	}
 //	若是 obj 实现了 HasPERaw，会尝试从更底层的方法去判断是否有实现 CanSetError
-func TrySetError(obj interface{}, err error) bool {
+func TrySetError(obj any, err error) bool {
 	val := obj
 	for {
 		if val == nil {
@@ -748,7 +728,7 @@ func TrySetError(obj interface{}, err error) bool {
 //	type CanSetError interface {
 //		CanSetError(err error)
 //	}
-func MustSetError(obj interface{}, err error) {
+func MustSetError(obj any, err error) {
 	if !TrySetError(obj, err) {
 		panic(fmt.Sprintf("CanSetError failed, %T not implement CanSetError interface", obj))
 	}

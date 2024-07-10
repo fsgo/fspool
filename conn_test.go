@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
+	"github.com/fsgo/fst"
 )
 
 type testConnServer struct {
@@ -120,7 +120,7 @@ func TestNewConnPool(t *testing.T) {
 		for i := 0; i < 10; i++ {
 			t.Run(fmt.Sprintf("for_%d", i), func(t *testing.T) {
 				conn, errGet := cp.Get(context.Background())
-				require.NoError(t, errGet)
+				fst.NoError(t, errGet)
 
 				// todo check it
 				_ = ReadMeta(conn)
@@ -130,30 +130,30 @@ func TestNewConnPool(t *testing.T) {
 				sendContent := []byte(fmt.Sprintf("loop %d", i))
 
 				t.Run("write", func(t *testing.T) {
-					require.NoError(t, conn.SetWriteDeadline(time.Now().Add(time.Second)))
+					fst.NoError(t, conn.SetWriteDeadline(time.Now().Add(time.Second)))
 					wrote, errWrite := conn.Write(append(sendContent, '\n'))
 					t.Logf("conn.Write %d %v", wrote, errWrite)
-					require.NoError(t, errWrite)
-					require.NoError(t, conn.SetWriteDeadline(time.Time{}))
+					fst.NoError(t, errWrite)
+					fst.NoError(t, conn.SetWriteDeadline(time.Time{}))
 				})
 
 				t.Run("read", func(t *testing.T) {
-					require.NoError(t, conn.SetReadDeadline(time.Now().Add(time.Second)))
+					fst.NoError(t, conn.SetReadDeadline(time.Now().Add(time.Second)))
 					rd := bufio.NewReader(conn)
 					gotLine, _, errRead := rd.ReadLine()
 					t.Logf("rd.ReadLine() %q err=%v", gotLine, errRead)
-					require.NoError(t, errRead)
-					require.NoError(t, conn.SetReadDeadline(time.Time{}))
+					fst.NoError(t, errRead)
+					fst.NoError(t, conn.SetReadDeadline(time.Time{}))
 
-					require.Equal(t, string(sendContent), string(gotLine))
+					fst.Equal(t, string(sendContent), string(gotLine))
 				})
 
 				t.Run("getConnecting", func(t *testing.T) {
-					require.Equal(t, 1, ts.getConnecting())
+					fst.Equal(t, 1, ts.getConnecting())
 				})
 
 				t.Run("close", func(t *testing.T) {
-					require.NoError(t, conn.Close())
+					fst.NoError(t, conn.Close())
 				})
 
 				t.Run("stats", func(t *testing.T) {
@@ -164,7 +164,7 @@ func TestNewConnPool(t *testing.T) {
 						InUse:   0,
 						Idle:    1,
 					}
-					require.Equal(t, want, got)
+					fst.Equal(t, want, got)
 				})
 			})
 		}

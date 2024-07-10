@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
+	"github.com/fsgo/fst"
 )
 
 var _ Element = (*testEL)(nil)
@@ -99,25 +99,25 @@ func TestNewSimple(t *testing.T) {
 		return &testEL{id: v, p: p, MetaInfo: NewMetaInfo()}, nil
 	}
 
-	testForEach := func(t *testing.T, p SimplePool, getWant func(i int) int32) {
+	testForEach := func(t *testing.T, p *SimplePool, getWant func(i int) int32) {
 		defer resetID()
 		t.Run("foreach", func(t *testing.T) {
 			for i := 1; i < 1000; i++ {
 				t.Run(fmt.Sprintf("for_%d", i), func(t *testing.T) {
 					val, err := p.Get(context.Background())
-					require.NoError(t, err)
+					fst.NoError(t, err)
 					defer val.Close()
 
 					v := val.(*testEL)
 					got := v.ID()
 					want := getWant(i)
-					require.Equal(t, want, got)
+					fst.Equal(t, want, got)
 				})
 			}
 		})
 	}
 
-	testForEachConc := func(t *testing.T, p SimplePool, doWant func(want *int32, i int)) {
+	testForEachConc := func(t *testing.T, p *SimplePool, doWant func(want *int32, i int)) {
 		defer resetID()
 		var wg sync.WaitGroup
 		var got int32
@@ -139,7 +139,7 @@ func TestNewSimple(t *testing.T) {
 			}()
 		}
 		wg.Wait()
-		require.Equal(t, want, got)
+		fst.Equal(t, want, got)
 	}
 
 	t.Run("case 1-default values", func(t *testing.T) {
@@ -195,7 +195,7 @@ func TestNewSimple(t *testing.T) {
 
 		t.Run("slow", func(t *testing.T) {
 			el, errGet := p.Get(context.Background())
-			require.NoError(t, errGet)
+			fst.NoError(t, errGet)
 
 			// 由于 MaxOpen=1 所以不能正常的获取到 元素
 			t.Run("timeout", func(t *testing.T) {
@@ -205,7 +205,7 @@ func TestNewSimple(t *testing.T) {
 						defer cancel()
 						_, err2 := p.Get(ctx)
 						want := context.DeadlineExceeded
-						require.Equal(t, want, err2)
+						fst.Equal(t, want, err2)
 					})
 				}
 			})
@@ -217,7 +217,7 @@ func TestNewSimple(t *testing.T) {
 				ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
 				defer cancel()
 				el2, err2 := p.Get(ctx)
-				require.NoError(t, err2)
+				fst.NoError(t, err2)
 				defer el2.Close()
 			})
 		})
@@ -289,19 +289,17 @@ func TestNewSimple(t *testing.T) {
 	})
 }
 
-func testSimplePoolClose(t *testing.T, p SimplePool) {
-	sp := p.(*simplePool)
-
+func testSimplePoolClose(t *testing.T, sp *SimplePool) {
 	t.Run("Close", func(t *testing.T) {
-		require.NoError(t, p.Close())
+		fst.NoError(t, sp.Close())
 
 		if got := len(sp.idles); got > 0 {
 			t.Fatalf("len(sp.idles)=%v want=0", got)
 		}
 
-		el, err := p.Get(context.Background())
-		require.Error(t, err)
-		require.Nil(t, el)
+		el, err := sp.Get(context.Background())
+		fst.Error(t, err)
+		fst.Nil(t, el)
 	})
 }
 
@@ -369,7 +367,7 @@ func TestSimplePool_Close(t *testing.T) {
 
 			for i := 0; i < 5; i++ {
 				item, err = p.Get(context.Background())
-				require.NoError(t, err)
+				fst.NoError(t, err)
 				// close it after pool closed
 				closers = append(closers, item.Close)
 			}
@@ -379,13 +377,11 @@ func TestSimplePool_Close(t *testing.T) {
 				t.Logf("meta=%s", m.String())
 				return nil
 			})
-			require.NoError(t, err)
-
-			sp := p.(*simplePool)
+			fst.NoError(t, err)
 
 			for i := 0; i < 2; i++ {
 				testSimplePoolClose(t, p)
-				require.Equal(t, 0, len(sp.idles))
+				fst.Equal(t, 0, len(p.idles))
 			}
 
 			for _, closeFn := range closers {
@@ -395,7 +391,7 @@ func TestSimplePool_Close(t *testing.T) {
 			mu.Lock()
 			got := len(closed)
 			mu.Unlock()
-			require.Equal(t, tt.wantClosed, got)
+			fst.Equal(t, tt.wantClosed, got)
 		})
 	}
 }
@@ -421,23 +417,23 @@ func TestNewSimpleElement(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		t.Run(fmt.Sprintf("id=%d", i), func(t *testing.T) {
 			item, err := p.Get(context.Background())
-			require.NoError(t, err)
+			fst.NoError(t, err)
 
 			val := item.(SimpleElement)
 			defer val.Close()
 			user := val.PERaw().(*userInfo)
 
-			require.Equal(t, 0, user.num)
+			fst.Equal(t, 0, user.num)
 			user.num = i + 10
 			_ = user
 
 			meta := ReadMeta(val)
 			wantID := uint64(i) + 1
 			gotID := meta.ID
-			require.Equal(t, wantID, gotID)
+			fst.Equal(t, wantID, gotID)
 
 			resetWant := int32(i)
-			require.Equal(t, resetWant, resetTotal)
+			fst.Equal(t, resetWant, resetTotal)
 		})
 	}
 }
@@ -447,7 +443,7 @@ func TestMustSetError(t *testing.T) {
 		item := &pConn{}
 		err := errors.New("err")
 		MustSetError(item, err)
-		require.Error(t, item.PEActive())
+		fst.Error(t, item.PEActive())
 	})
 
 	t.Run("case 2-panic", func(t *testing.T) {
@@ -491,7 +487,7 @@ func TestSimplePool_Get_BadEls(t *testing.T) {
 		el.Close()
 	}
 
-	rowPool := p.(*simplePool)
+	rowPool := p
 	t.Run("check idle num", func(t *testing.T) {
 		got := len(rowPool.idles)
 		want := len(els)
@@ -506,15 +502,15 @@ func TestSimplePool_Get_BadEls(t *testing.T) {
 
 	t.Run("get one", func(t *testing.T) {
 		el, err := p.Get(context.Background())
-		require.NoError(t, err)
+		fst.NoError(t, err)
 
 		got := el.(*testEL).ID()
 		want := int32(opt.MaxOpen) + 1
-		require.Equal(t, want, got)
+		fst.Equal(t, want, got)
 
 		gotIdle := len(rowPool.idles)
 		wantIdle := 0
-		require.Equal(t, wantIdle, gotIdle)
+		fst.Equal(t, wantIdle, gotIdle)
 	})
 }
 
@@ -539,7 +535,7 @@ func BenchmarkNewSimplePool(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		item, err := p.Get(context.Background())
-		require.NoError(b, err)
+		fst.NoError(b, err)
 		item.Close()
 	}
 }

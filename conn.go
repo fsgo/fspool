@@ -16,43 +16,31 @@ import (
 type NewConnFunc func(ctx context.Context) (net.Conn, error)
 
 // Trans 转换为原始的 NewElementFunc
-func (nf NewConnFunc) Trans(p *connPool) NewElementFunc {
+func (nf NewConnFunc) trans() NewElementFunc {
 	return func(ctx context.Context, pool PoolPutter) (Element, error) {
 		raw, err := nf(ctx)
 		if err != nil {
 			return nil, err
 		}
-		vc := newPConn(raw, p)
+		vc := newPConn(raw, pool)
 		return vc, nil
 	}
 }
 
 // NewConnPool 创建新的 net.Conn 的连接池
-func NewConnPool(option *Option, newFunc NewConnFunc) ConnPool {
-	p := &connPool{}
-	p.raw = NewSimplePool(option, newFunc.Trans(p))
-	return p
+func NewConnPool(option *Option, newFunc NewConnFunc) *ConnPool {
+	return &ConnPool{
+		raw: NewSimplePool(option, newFunc.trans()),
+	}
 }
 
 // ConnPool 网络连接池
-type ConnPool interface {
-	Get(ctx context.Context) (net.Conn, error)
-	Option() Option
-	Stats() Stats
-	Range(func(net.Conn) error) error
-	Close() error
-}
-
-var _ ConnPool = (*connPool)(nil)
-var _ PoolPutter = (*connPool)(nil)
-
-// connPool 网络连接池
-type connPool struct {
-	raw SimplePool
+type ConnPool struct {
+	raw *SimplePool
 }
 
 // Get 获取一个网络连接
-func (cp *connPool) Get(ctx context.Context) (el net.Conn, err error) {
+func (cp *ConnPool) Get(ctx context.Context) (el net.Conn, err error) {
 	value, err := cp.raw.Get(ctx)
 	if err != nil {
 		return nil, err
@@ -60,29 +48,24 @@ func (cp *connPool) Get(ctx context.Context) (el net.Conn, err error) {
 	return value.(net.Conn), nil
 }
 
-// Put put to pool
-func (cp *connPool) Put(value interface{}) error {
-	return cp.raw.(PoolPutter).Put(value)
-}
-
-func (cp *connPool) Range(fn func(net.Conn) error) error {
+func (cp *ConnPool) Range(fn func(net.Conn) error) error {
 	return cp.raw.Range(func(el io.Closer) error {
 		return fn(el.(net.Conn))
 	})
 }
 
 // Close 关闭连接池
-func (cp *connPool) Close() error {
+func (cp *ConnPool) Close() error {
 	return cp.raw.Close()
 }
 
 // Option get pool option
-func (cp *connPool) Option() Option {
+func (cp *ConnPool) Option() Option {
 	return cp.raw.Option()
 }
 
 // Stats 连接池的状态
-func (cp *connPool) Stats() Stats {
+func (cp *ConnPool) Stats() Stats {
 	return cp.raw.Stats()
 }
 
@@ -248,7 +231,7 @@ func (c *pConn) isDoing() bool {
 	return c.readStat == statStart || c.writeStat == statStart
 }
 
-func (c *pConn) Raw() net.Conn {
+func (c *pConn) Unwrap() net.Conn {
 	if c.isClosed() {
 		return nil
 	}
@@ -257,8 +240,8 @@ func (c *pConn) Raw() net.Conn {
 
 var _ HasPERaw = (*pConn)(nil)
 
-func (c *pConn) PERaw() interface{} {
-	return c.Raw()
+func (c *pConn) PERaw() any {
+	return c.Unwrap()
 }
 
 func (c *pConn) PERawClose() error {
@@ -307,8 +290,8 @@ func (c *pConn) PEActive() error {
 func (c *pConn) rawConn() net.Conn {
 	raw := c.raw
 	for {
-		if r, ok := raw.(interface{ Raw() net.Conn }); ok {
-			raw = r.Raw()
+		if r, ok := raw.(interface{ Unwrap() net.Conn }); ok {
+			raw = r.Unwrap()
 		} else {
 			break
 		}

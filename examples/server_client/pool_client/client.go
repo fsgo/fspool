@@ -20,7 +20,7 @@ import (
 	"github.com/fsgo/fspool"
 )
 
-var pool fspool.ConnPool
+var pool *fspool.ConnPool
 
 var serverAddr = flag.String("server", "127.0.0.1:8019", "server addr")
 var lAddr = flag.String("addr", "0.0.0.0:8020", "http server for client status api")
@@ -55,7 +55,7 @@ func startHTTPServer() {
 		log.Fatalln(err.Error())
 	}
 	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		info := map[string]interface{}{
+		info := map[string]any{
 			"Pool": pool.Stats(),
 		}
 		bf, err := json.Marshal(info)
